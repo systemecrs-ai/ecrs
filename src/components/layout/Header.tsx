@@ -10,6 +10,9 @@
 import { APP_NAME } from '@/config/constants';
 import { Sparkles, Menu, X, User } from 'lucide-react';
 import { motion } from 'framer-motion';
+import ProfileDropdown from './ProfileDropdown';
+import Image from 'next/image';
+import Link from 'next/link';
 
 interface HeaderProps {
   isChatOpen: boolean;
@@ -21,23 +24,23 @@ export default function Header({ isChatOpen, onToggleChat }: HeaderProps) {
     <header className="sticky top-0 z-50 border-b border-white/[0.06] bg-black/50 backdrop-blur-xl">
       <div className="flex h-16 w-full items-center justify-between px-6">
         {/* Brand */}
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-lg shadow-indigo-500/20">
-            <Sparkles className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-base font-bold tracking-tight text-white">
-              {APP_NAME}
-            </h1>
-          </div>
-        </div>
+        <Link href="/" className="flex items-center gap-2.5">
+          <Image
+            src="/logo.jpg"
+            alt="CartContext Logo"
+            width={32}
+            height={32}
+            className="object-contain"
+          />
+          <h1 className="text-xl">
+            <span className="font-semibold text-white tracking-tight">cart</span>
+            <span className="font-light text-slate-300 tracking-tight">context</span>
+          </h1>
+        </Link>
 
         {/* Right side controls */}
         <div className="flex items-center gap-4">
-          {/* User Profile Avatar */}
-          <div className="hidden sm:flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.05] border border-white/[0.1]">
-            <User className="h-4 w-4 text-white/70" />
-          </div>
+          <ProfileDropdown />
 
           {/* Chat Toggle Button */}
           <button

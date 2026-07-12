@@ -16,9 +16,10 @@ import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
 import TypingIndicator from '@/components/ui/TypingIndicator';
 import RetrievalIndicator from '@/components/ui/RetrievalIndicator';
-import { APP_NAME, SUGGESTED_QUERIES } from '@/config/constants';
-import { Sparkles, MessageSquarePlus } from 'lucide-react';
+import { SUGGESTED_QUERIES } from '@/config/constants';
+import { MessageSquarePlus } from 'lucide-react';
 import { useSmoothStream } from './useSmoothStream';
+import Image from 'next/image';
 
 /**
  * Generates or retrieves a persistent session ID from localStorage.
@@ -103,7 +104,13 @@ export default function ChatInterface() {
       {/* Drawer Header (Internal) */}
       <div className="flex items-center justify-between border-b border-white/[0.06] bg-black/20 px-6 py-4 backdrop-blur-md">
         <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-indigo-400" />
+          <Image
+            src="/logo.jpg"
+            alt="CartContext Logo"
+            width={16}
+            height={16}
+            className="object-contain"
+          />
           <h3 className="text-sm font-semibold text-white">AI Assistant</h3>
         </div>
         {hasMessages && (
@@ -123,12 +130,19 @@ export default function ChatInterface() {
           /* ── Compact Empty State for Drawer ─────────────────────── */
           <div className="flex h-full flex-col items-center justify-center px-6 py-8">
             <div className="relative mb-6">
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500/20 to-violet-600/20 border border-indigo-500/30 shadow-2xl shadow-indigo-500/10">
-                <Sparkles className="h-8 w-8 text-indigo-400" />
-              </div>
+              <Image
+                src="/logo.jpg"
+                alt="CartContext Logo"
+                width={64}
+                height={64}
+                className="object-contain"
+              />
             </div>
 
-            <h2 className="text-xl font-bold text-white mb-2">{APP_NAME}</h2>
+            <h2 className="text-xl mb-2">
+              <span className="font-semibold text-white tracking-tight">cart</span>
+              <span className="font-light text-slate-300 tracking-tight">context</span>
+            </h2>
             <p className="text-xs text-white/40 mb-8 text-center leading-relaxed">
               Your personal AI stylist. Ask for outfit recommendations, finding specific items, or styling advice.
             </p>

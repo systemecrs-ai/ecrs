@@ -9,7 +9,8 @@
  */
 
 import { useMemo } from 'react';
-import { User, Sparkles } from 'lucide-react';
+import { User } from 'lucide-react';
+import Image from 'next/image';
 
 interface MessageBubbleProps {
   role: 'user' | 'assistant';
@@ -36,7 +37,13 @@ export default function MessageBubble({ role, content }: MessageBubbleProps) {
         {isUser ? (
           <User className="h-4 w-4 text-white" />
         ) : (
-          <Sparkles className="h-4 w-4 text-indigo-400" />
+          <Image
+            src="/logo.jpg"
+            alt="AI Avatar"
+            width={16}
+            height={16}
+            className="object-contain"
+          />
         )}
       </div>
 
