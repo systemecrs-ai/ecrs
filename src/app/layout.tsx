@@ -15,7 +15,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "StyleAI — Intelligent Apparel Shopping Assistant",
+  title: "CartContext — Intelligent Apparel Shopping Assistant",
   description:
     "Your AI-powered personal stylist. Get curated apparel recommendations powered by RAG-enhanced Nvidia Nemotron AI and real-time inventory search.",
   keywords: [
@@ -28,10 +28,13 @@ export const metadata: Metadata = {
   ],
   authors: [{ name: "ECRS" }],
   openGraph: {
-    title: "StyleAI — Intelligent Apparel Shopping Assistant",
+    title: "CartContext — Intelligent Apparel Shopping Assistant",
     description:
       "Get curated fashion recommendations powered by RAG-enhanced Nvidia Nemotron AI.",
     type: "website",
+  },
+  verification: {
+    google: "jTmuFslsEm8iZvxODamsUsQjygv4wRyUBuqZ8czx5Wg",
   },
 };
 
