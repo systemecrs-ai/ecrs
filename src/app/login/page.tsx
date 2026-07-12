@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, ArrowRight, Mail, Lock } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
+import GoogleAuthButton from '@/components/auth/GoogleAuthButton';
 
 export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -152,6 +153,18 @@ export default function LoginPage() {
               )}
             </button>
           </form>
+
+          {/* ----- GOOGLE OAUTH SECTION ----- */}
+          <div className="my-6 flex items-center gap-4">
+            <div className="h-px flex-1 bg-white/10"></div>
+            <span className="text-xs font-medium text-white/30 uppercase tracking-wider">
+              Or continue with
+            </span>
+            <div className="h-px flex-1 bg-white/10"></div>
+          </div>
+          
+          <GoogleAuthButton />
+          {/* -------------------------------- */}
 
           <div className="mt-8 text-center text-sm text-white/50">
             {isLogin ? "Don't have an account? " : "Already have an account? "}

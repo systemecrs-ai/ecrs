@@ -22,7 +22,7 @@ export const metadata: Metadata = {
     "AI shopping assistant",
     "apparel recommendations",
     "fashion AI",
-    "StyleAI",
+    "CartContext",
     "RAG",
     "Nvidia Nemotron",
   ],
