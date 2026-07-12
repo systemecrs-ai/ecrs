@@ -49,6 +49,8 @@ function getMessageText(message: { parts?: Array<{ type: string; text?: string }
     .join('');
 }
 
+import { useSmoothStream } from './useSmoothStream';
+
 export default function ChatInterface() {
   const [sessionId] = useState(() => getSessionId());
 
@@ -60,7 +62,10 @@ export default function ChatInterface() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   const isLoading = status === 'submitted' || status === 'streaming';
+  const isStreaming = status === 'streaming';
   const isSubmitted = status === 'submitted';
+  
+  const smoothedMessages = useSmoothStream(messages, isStreaming);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -88,7 +93,7 @@ export default function ChatInterface() {
     [isLoading, sendMessage, sessionId]
   );
 
-  const hasMessages = messages.length > 0;
+  const hasMessages = smoothedMessages.length > 0;
 
   return (
     <div className="flex h-full flex-col">
@@ -138,7 +143,7 @@ export default function ChatInterface() {
         ) : (
           /* ── Messages List ──────────────────────────────────────── */
           <div className="mx-auto max-w-3xl py-6 space-y-1">
-            {messages.map((message) => (
+            {smoothedMessages.map((message) => (
               <MessageBubble
                 key={message.id}
                 role={message.role as 'user' | 'assistant'}

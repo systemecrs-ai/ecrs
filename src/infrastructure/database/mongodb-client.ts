@@ -16,13 +16,14 @@ import { DatabaseError } from '@/lib/errors';
 const log = createLogger('MongoDBClient');
 
 /**
- * Extend the global type to cache the MongoClient across HMR in development.
+ * Extend the global type to cache the MongoClient across HMR in development
+ * and across serverless lambda invocations in production.
  */
 declare global {
   // eslint-disable-next-line no-var
-  var _mongoClient: MongoClient | undefined;
+  var mongoClient: MongoClient | undefined;
   // eslint-disable-next-line no-var
-  var _mongoClientPromise: Promise<MongoClient> | undefined;
+  var mongoClientPromise: Promise<MongoClient> | undefined;
 }
 
 /** MongoDB client connection options */
@@ -36,33 +37,22 @@ const CLIENT_OPTIONS = {
 
 /**
  * Returns a cached MongoClient promise.
- * Uses global caching in dev to survive HMR, module caching in prod.
+ * Uses global caching in all environments to survive HMR and lambda cold starts.
  */
 function getClientPromise(): Promise<MongoClient> {
   const uri = getMongoUri();
 
-  if (process.env.NODE_ENV === 'development') {
-    // In development, use a global variable to preserve connection across HMR
-    if (!global._mongoClientPromise) {
-      log.info('Creating new MongoDB client (development mode)');
-      const client = new MongoClient(uri, CLIENT_OPTIONS);
-      global._mongoClientPromise = client.connect();
-      global._mongoClient = client;
-    }
-    return global._mongoClientPromise;
-  }
-
-  // In production, use module-level caching
-  if (!clientPromise) {
-    log.info('Creating new MongoDB client (production mode)');
+  if (!global.mongoClientPromise) {
+    log.info('Creating new MongoDB client and caching globally');
     const client = new MongoClient(uri, CLIENT_OPTIONS);
-    clientPromise = client.connect();
+    global.mongoClientPromise = client.connect();
+    global.mongoClient = client;
+  } else {
+    log.debug('Reusing globally cached MongoDB client promise');
   }
-  return clientPromise;
+  
+  return global.mongoClientPromise;
 }
-
-/** Module-level cache for production */
-let clientPromise: Promise<MongoClient> | null = null;
 
 /**
  * Returns the connected MongoDB database instance.

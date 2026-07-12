@@ -19,7 +19,7 @@
 
 import { streamText } from 'ai';
 import { getEmbedding, getChatModel } from '@/infrastructure/nvidia/nvidia-client';
-import { vectorSearch } from '@/infrastructure/database/product-repository';
+import { hybridSearch } from '@/infrastructure/database/product-repository';
 import { searchDocumentChunks } from '@/infrastructure/database/document-repository';
 import { buildSystemPrompt, buildMessages } from './prompt-builder';
 import { retrieveUserMemory, maybeDispatchMemorySummarization } from './memory-service';
@@ -93,7 +93,7 @@ export async function executeRAGPipeline(
   // Fire all three searches simultaneously
   const [productResults, documentResults, userMemory] = await Promise.all([
     // Search 1: Products
-    vectorSearch(queryEmbedding, VECTOR_SEARCH_LIMIT).catch(error => {
+    hybridSearch(userQuery, queryEmbedding, VECTOR_SEARCH_LIMIT).catch(error => {
       log.error('Product search failed', { error: (error as Error).message });
       return [] as ProductSearchDocument[];
     }),
@@ -210,6 +210,7 @@ async function persistAndTriggerMemory(
 function mapToProductSearchResult(doc: ProductSearchDocument): ProductSearchResult {
   return {
     id: doc._id.toString(),
+    sku: doc.sku,
     name: doc.name,
     description: doc.description,
     category: doc.category,

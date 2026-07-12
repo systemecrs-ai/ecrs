@@ -34,6 +34,7 @@ export interface Message {
  */
 export interface Product {
   id: string;
+  sku?: string;
   name: string;
   description: string;
   category: string;
@@ -156,6 +157,7 @@ export interface ChatResponseMetadata {
  * Product data used for seeding the database (without ID or embedding).
  */
 export interface ProductSeedData {
+  sku?: string;
   name: string;
   description: string;
   category: string;

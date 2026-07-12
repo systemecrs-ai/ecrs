@@ -18,6 +18,7 @@ import { ObjectId } from 'mongodb';
  */
 export interface ProductDocument {
   _id: ObjectId;
+  sku?: string;
   name: string;
   description: string;
   category: string;

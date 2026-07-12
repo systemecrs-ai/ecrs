@@ -35,17 +35,26 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+import { createClient } from '@/utils/supabase/server';
+import AuthWall from '@/components/ui/AuthWall';
+
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
   return (
     <html
       lang="en"
       className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {!user && <AuthWall />}
+        {user && children}
+      </body>
     </html>
   );
 }

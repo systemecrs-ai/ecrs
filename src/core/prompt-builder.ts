@@ -145,16 +145,27 @@ function formatProductContext(products: ProductSearchResult[]): string {
   return products
     .map((product, index) => {
       const stockStatus = product.inStock ? '✅ In Stock' : '❌ Out of Stock';
-      const stars = '⭐'.repeat(Math.round(product.rating));
+      // Safety net for rating just in case it is missing
+      const stars = '⭐'.repeat(Math.round(product.rating || 0)); 
+      
+      // SAFETY NETS: If colors/sizes/tags exist, join them. Otherwise, print 'N/A'
+      const colors = product.colors && product.colors.length > 0 ? product.colors.join(', ') : 'N/A';
+      const sizes = product.sizes && product.sizes.length > 0 ? product.sizes.join(', ') : 'N/A';
+      const tags = product.tags && product.tags.length > 0 ? product.tags.join(', ') : 'N/A';
+      
+      // Extract SKU if it exists
+      const skuLine = product.sku ? `- **SKU:** ${product.sku}` : '';
 
       return `### Product ${index + 1}: ${product.name}
+${skuLine}
 - **Brand:** ${product.brand}
 - **Category:** ${product.category} > ${product.subcategory}
 - **Price:** $${product.price.toFixed(2)} ${product.currency}
-- **Colors:** ${product.colors.join(', ')}
-- **Sizes:** ${product.sizes.join(', ')}
+- **Colors:** ${colors}
+- **Sizes:** ${sizes}
 - **Material:** ${product.material}
 - **Gender:** ${product.gender}
+- **Tags:** ${tags}
 - **Rating:** ${stars} (${product.rating}/5, ${product.reviewCount} reviews)
 - **Status:** ${stockStatus}
 - **Description:** ${product.description}

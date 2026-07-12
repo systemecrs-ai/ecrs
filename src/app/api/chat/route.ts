@@ -11,6 +11,7 @@
  */
 
 import { executeRAGPipeline } from '@/core/rag-pipeline';
+
 import { ValidationError, AppError } from '@/lib/errors';
 import { createLogger } from '@/lib/logger';
 
@@ -33,11 +34,12 @@ export async function POST(req: Request): Promise<Response> {
       throw new ValidationError('Request must include a non-empty "messages" array.');
     }
 
-    // Extract sessionId from request body or headers
-    const sessionId: string | undefined =
-      body.sessionId ||
-      req.headers.get('x-session-id') ||
-      undefined;
+    // Extract sessionId cleanly from the verified header set by middleware
+    const sessionId = req.headers.get('x-user-id');
+
+    if (!sessionId) {
+      throw new AppError('Unauthorized access to chat API.', 'UNAUTHORIZED', 401);
+    }
 
     // Extract the latest user message from the v7 UIMessage format
     const messages = body.messages;
