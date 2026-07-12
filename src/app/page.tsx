@@ -1,31 +1,51 @@
-import GradientBackground from "@/components/ui/GradientBackground";
-import Header from "@/components/layout/Header";
-import ChatInterface from "@/components/chat/ChatInterface";
+'use client';
 
-import DocumentUploader from "@/components/ui/DocumentUploader";
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import GradientBackground from '@/components/ui/GradientBackground';
+import Header from '@/components/layout/Header';
+import ChatInterface from '@/components/chat/ChatInterface';
+import ProductCanvas from '@/components/ui/ProductCanvas';
 
 /**
  * Home Page
  *
- * Main application page rendering the StyleAI chat interface
- * and document ingestion UI with animated background.
+ * Main application page rendering the Split View layout:
+ * Product Canvas (Main) and collapsible AI Chat Drawer.
  */
 export default function Home() {
+  const [isChatOpen, setIsChatOpen] = useState(false);
+
   return (
     <>
       <GradientBackground />
-      <div className="flex h-screen flex-col">
-        <Header />
-        <main className="flex-1 overflow-hidden flex flex-col lg:flex-row">
-          {/* Main Chat Interface */}
-          <div className="flex-1 border-r border-white/10 overflow-hidden relative">
-            <ChatInterface />
+      <div className="flex min-h-screen flex-col">
+        <Header isChatOpen={isChatOpen} onToggleChat={() => setIsChatOpen(!isChatOpen)} />
+        
+        <main className="relative flex flex-1">
+          {/* Main Product Canvas */}
+          <div
+            className={`flex-1 transition-all duration-500 ease-in-out ${
+              isChatOpen ? 'mr-0 lg:mr-[400px]' : ''
+            }`}
+          >
+            <ProductCanvas />
           </div>
-          
-          {/* Sidebar: Document Ingestion */}
-          <div className="w-full lg:w-96 xl:w-[450px] overflow-y-auto bg-black/20 backdrop-blur-xl shrink-0 border-t lg:border-t-0 border-white/10 p-6 hidden md:block">
-            <DocumentUploader />
-          </div>
+
+          {/* Collapsible Chat Drawer */}
+          <AnimatePresence>
+            {isChatOpen && (
+              <motion.div
+                initial={{ x: '100%', opacity: 0.5 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: '100%', opacity: 0.5 }}
+                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                className="fixed right-0 top-16 z-40 h-[calc(100vh-64px)] w-full max-w-[400px] border-l border-white/[0.08] bg-black/60 shadow-2xl backdrop-blur-2xl sm:w-[400px]"
+              >
+                <ChatInterface />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </main>
       </div>
     </>
