@@ -6,6 +6,7 @@ import GradientBackground from '@/components/ui/GradientBackground';
 import Header from '@/components/layout/Header';
 import ChatInterface from '@/components/chat/ChatInterface';
 import ProductCanvas from '@/components/ui/ProductCanvas';
+import { Analytics } from "@vercel/analytics/next"
 
 /**
  * Home Page
@@ -18,6 +19,7 @@ export default function Home() {
 
   return (
     <>
+      <Analytics />
       <GradientBackground />
       <div className="flex min-h-screen flex-col">
         <Header isChatOpen={isChatOpen} onToggleChat={() => setIsChatOpen(!isChatOpen)} />
