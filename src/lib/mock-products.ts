@@ -84,7 +84,7 @@ export const mockProducts = [
     rating: 4.4,
     reviewCount: 3110,
     description: 'The historic classic straight leg jean with signature button fly.',
-    imageUrl: 'https://images.unsplash.com/photo-1428366890462-dd4baecf492b?auto=format&fit=crop&w=800&q=80',
+    imageUrl: 'https://vrfbakltqaupsrrjhrht.supabase.co/storage/v1/object/public/Products/501%20Original%20Fit%20Straight%20Jeans.jpg',
     tags: ['denim', 'classic', 'vintage'],
   },
 
@@ -137,7 +137,7 @@ export const mockProducts = [
     rating: 4.8,
     reviewCount: 945,
     description: 'Ultra-warm winter puffer coat filled with 700-fill goose down insulation.',
-    imageUrl: 'https://images.unsplash.com/photo-1544154942-83b631f24d77?auto=format&fit=crop&w=800&q=80',
+    imageUrl: 'https://vrfbakltqaupsrrjhrht.supabase.co/storage/v1/object/public/Products/Down-Insulated%20Puffer%20Jacket.jpg',
     tags: ['winter', 'heavy', 'outdoor', 'cold'],
   },
 
@@ -173,7 +173,7 @@ export const mockProducts = [
     rating: 4.5,
     reviewCount: 612,
     description: 'Lightweight running and training shorts featuring sweat-wicking multi-way stretch.',
-    imageUrl: 'https://images.unsplash.com/photo-1590426140510-b9cc92fbe0ab?auto=format&fit=crop&w=800&q=80',
+    imageUrl: 'https://vrfbakltqaupsrrjhrht.supabase.co/storage/v1/object/public/Products/Pace%20Breaker%20Athletic%20Shorts.jpg',
     tags: ['running', 'gym', 'shorts', 'breathable'],
   },
 
@@ -198,7 +198,7 @@ export const mockProducts = [
   {
     sku: 'SKU-FTR-002',
     name: 'Stan Smith Sustainable Shoes',
-    brand: 'Adidas',
+    brand: 'Puma',
     price: 100.00,
     currency: 'USD',
     category: 'Footwear',
