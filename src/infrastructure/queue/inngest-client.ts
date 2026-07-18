@@ -18,7 +18,7 @@ type InngestEvents = {
   'ingest/document.uploaded': {
     data: {
       jobId: string;
-      blobUrl: string;
+      blobPath: string;
       filename: string;
       mimeType: string;
       fileSizeBytes: number;

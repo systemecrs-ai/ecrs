@@ -1,14 +1,26 @@
 /**
- * Ingestion Worker
+ * Ingestion Worker (Enterprise-Grade)
  * 
  * Inngest background function that processes document ingestion
  * asynchronously. Triggered by the `ingest/document.uploaded` event
  * dispatched from the /api/ingest route.
  * 
+ * Architectural design for Vercel Free Tier (10s timeout):
+ * 
+ * 1. MERGED download+parse: Fetches from Supabase Storage and parses
+ *    in a single step — returns only lightweight Markdown (no Base64).
+ * 
+ * 2. LOOP INVERSION for summarization: Complex chunks (tables/images)
+ *    are batched in groups of 3 with the loop OUTSIDE step.run(),
+ *    resetting the timeout clock after every batch.
+ * 
+ * 3. LOOP INVERSION for embeddings: Texts are batched in groups of 50
+ *    with the loop OUTSIDE step.run(), enabling 100+ page documents.
+ * 
  * Each step is individually retriable — if embedding fails,
  * it retries from that step, not from the beginning.
  * 
- * Pipeline: Download → Parse → Chunk → Summarize → Embed → Store
+ * Pipeline: Download+Parse → Chunk → Summarize (batched) → Embed (batched) → Store
  * 
  * @module core/workers/ingestion-worker
  */
@@ -20,15 +32,23 @@ import { splitMarkdownIntoChunks, StructuredChunk } from '@/infrastructure/parsi
 import { generateChunkSummary } from '@/core/summarization-service';
 import { getEmbeddings } from '@/infrastructure/nvidia/nvidia-client';
 import { bulkInsertChunks } from '@/infrastructure/database/document-repository';
+import { createSignedDownloadUrl } from '@/infrastructure/storage/supabase-admin';
 import { DocumentChunk } from '@/infrastructure/database/types';
 import { createLogger } from '@/lib/logger';
 import { ObjectId } from 'mongodb';
 
 const log = createLogger('IngestionWorker');
 
+/** Number of complex chunks to summarize per step (resets Vercel timeout) */
+const SUMMARIZE_BATCH_SIZE = 3;
+
+/** Number of texts to embed per step (resets Vercel timeout) */
+const EMBED_BATCH_SIZE = 50;
+
 /**
  * Inngest function definition for document ingestion.
- * Uses step functions for reliable, resumable execution.
+ * Uses step functions with loop inversion for reliable, resumable execution
+ * that scales infinitely within Vercel's 10-second serverless timeout.
  */
 export const documentIngestionFunction = inngest.createFunction(
   {
@@ -52,44 +72,48 @@ export const documentIngestionFunction = inngest.createFunction(
     triggers: [{ event: 'ingest/document.uploaded' }],
   },
   async ({ event, step }) => {
-    const { jobId, blobUrl, filename, mimeType, fileSizeBytes } = event.data;
+    const { jobId, blobPath, filename, mimeType, fileSizeBytes } = event.data;
 
     log.info('Ingestion worker started', { jobId, filename, fileSizeBytes });
 
-    // ── Step 1: Download from Blob ────────────────────────────────────────
-    const fileBuffer = await step.run('download-blob', async () => {
+    // ── Step 1: Download from Supabase Storage + Parse (Merged) ──────────
+    // Eliminates the Base64 payload crash by never serializing the raw buffer.
+    // Downloads the file and immediately parses it with LlamaParse in a single
+    // step, returning only the lightweight Markdown string.
+    const markdown = await step.run('download-and-parse', async () => {
       await updateJobStatus(jobId, 'processing', {
-        progress: 'Downloading file from storage',
+        progress: 'Downloading and parsing document',
       });
 
-      log.info('Downloading file from blob storage', { jobId, blobUrl });
-      const response = await fetch(blobUrl);
+      // Generate a time-limited download URL from Supabase Storage
+      log.info('Creating signed download URL', { jobId, blobPath });
+      const downloadUrl = await createSignedDownloadUrl(blobPath);
+
+      // Download the file
+      log.info('Downloading file from storage', { jobId, blobPath });
+      const response = await fetch(downloadUrl);
       if (!response.ok) {
-        throw new Error(`Failed to download blob: ${response.status} ${response.statusText}`);
+        throw new Error(`Failed to download file: ${response.status} ${response.statusText}`);
       }
 
       const arrayBuffer = await response.arrayBuffer();
-      log.info('File downloaded', { jobId, sizeBytes: arrayBuffer.byteLength });
+      const buffer = Buffer.from(arrayBuffer);
+      log.info('File downloaded', { jobId, sizeBytes: buffer.length });
 
-      // Return as base64 since Inngest step results must be serializable
-      return Buffer.from(arrayBuffer).toString('base64');
-    });
-
-    // ── Step 2: Parse Document (LlamaParse) ───────────────────────────────
-    const markdown = await step.run('parse-document', async () => {
-      await updateJobStatus(jobId, 'processing', {
-        progress: 'Parsing document with AI vision',
-      });
-
+      // Parse immediately — no Base64 serialization
       log.info('Parsing document with LlamaParse', { jobId, filename });
-      const buffer = Buffer.from(fileBuffer, 'base64');
       const result = await parseDocument(buffer, mimeType);
 
-      log.info('Document parsed', { jobId, markdownLength: result.length });
+      log.info('Document downloaded and parsed', {
+        jobId,
+        markdownLength: result.length,
+      });
+
+      // Only the lightweight Markdown string crosses the step boundary
       return result;
     });
 
-    // ── Step 3: Structural Chunking ───────────────────────────────────────
+    // ── Step 2: Structural Chunking ───────────────────────────────────────
     const chunks = await step.run('chunk-document', async () => {
       await updateJobStatus(jobId, 'processing', {
         progress: 'Splitting into semantic chunks',
@@ -102,70 +126,127 @@ export const documentIngestionFunction = inngest.createFunction(
       return result;
     });
 
-    // ── Step 4: Summarize Complex Chunks ──────────────────────────────────
-    const summarizedChunks = await step.run('summarize-chunks', async () => {
-      await updateJobStatus(jobId, 'processing', {
-        progress: 'Generating summaries for tables and images',
-      });
+    // ── Step 3: Summarize Complex Chunks (Loop Inversion) ────────────────
+    // The loop is OUTSIDE step.run() so Vercel's timeout clock resets
+    // after every batch of 3 LLM calls. This enables infinite page scaling.
 
-      const result: StructuredChunk[] = [];
+    // Separate complex chunks (need LLM summarization) from plain text
+    const complexChunkIndices: number[] = [];
+    for (let i = 0; i < chunks.length; i++) {
+      if (chunks[i].type === 'table' || chunks[i].type === 'image_description') {
+        complexChunkIndices.push(i);
+      }
+    }
 
-      for (const chunk of chunks) {
-        if (chunk.type === 'table' || chunk.type === 'image_description') {
-          // Generate a summary for complex chunks (parent-child)
-          const summary = await generateChunkSummary(chunk.content, chunk.type);
-          result.push({
-            ...chunk,
-            content: summary, // Vectorize the summary (child)
-            parentContent: chunk.content, // Keep raw content (parent)
-            metadata: {
-              ...chunk.metadata,
-              isChildSummary: true,
-            },
+    // Build batches of complex chunk indices
+    const summarizeBatches: number[][] = [];
+    for (let i = 0; i < complexChunkIndices.length; i += SUMMARIZE_BATCH_SIZE) {
+      summarizeBatches.push(complexChunkIndices.slice(i, i + SUMMARIZE_BATCH_SIZE));
+    }
+
+    // Start with a copy of chunks — plain text chunks pass through unchanged
+    const summarizedChunks: StructuredChunk[] = [...chunks];
+
+    // Process each batch in its own step (resets serverless timeout)
+    for (let i = 0; i < summarizeBatches.length; i++) {
+      const batchIndices = summarizeBatches[i];
+
+      const batchResults = await step.run(`summarize-batch-${i}`, async () => {
+        await updateJobStatus(jobId, 'processing', {
+          progress: `Summarizing complex chunks (batch ${i + 1}/${summarizeBatches.length})`,
+        });
+
+        const results: { index: number; summary: string; originalContent: string }[] = [];
+
+        for (const idx of batchIndices) {
+          const chunk = chunks[idx];
+          log.debug('Summarizing chunk', { chunkId: chunk.id, type: chunk.type });
+
+          const summary = await generateChunkSummary(
+            chunk.content,
+            chunk.type as 'table' | 'image_description'
+          );
+          results.push({
+            index: idx,
+            summary,
+            originalContent: chunk.content,
           });
+
           log.debug('Chunk summarized', {
             chunkId: chunk.id,
             type: chunk.type,
             summaryLength: summary.length,
           });
-        } else {
-          result.push(chunk);
         }
-      }
 
-      log.info('Summarization completed', {
-        jobId,
-        summarized: result.filter(c => c.metadata.isChildSummary).length,
+        return results;
       });
-      return result;
+
+      // Apply batch results to the working array
+      for (const result of batchResults) {
+        summarizedChunks[result.index] = {
+          ...chunks[result.index],
+          content: result.summary,
+          parentContent: result.originalContent,
+          metadata: {
+            ...chunks[result.index].metadata,
+            isChildSummary: true,
+          },
+        };
+      }
+    }
+
+    log.info('Summarization completed', {
+      jobId,
+      totalBatches: summarizeBatches.length,
+      summarized: complexChunkIndices.length,
     });
 
-    // ── Step 5: Generate Embeddings ───────────────────────────────────────
-    const embeddings = await step.run('embed-chunks', async () => {
-      await updateJobStatus(jobId, 'processing', {
-        progress: 'Generating vector embeddings',
-      });
+    // ── Step 4: Generate Embeddings (Loop Inversion) ─────────────────────
+    // The loop is OUTSIDE step.run() so Vercel's timeout clock resets
+    // after every batch of 50 embeddings. Guarantees the Nvidia API
+    // never causes a function timeout on massive 100+ page documents.
 
-      log.info('Generating embeddings', { jobId, chunkCount: summarizedChunks.length });
+    const texts = summarizedChunks.map(c => c.content);
+    const allEmbeddings: number[][] = [];
 
-      const texts = summarizedChunks.map(c => c.content);
-      const allEmbeddings: number[][] = [];
-      const BATCH_SIZE = 50;
+    // Build batches of text indices
+    const embedBatchCount = Math.ceil(texts.length / EMBED_BATCH_SIZE);
 
-      for (let i = 0; i < texts.length; i += BATCH_SIZE) {
-        const batch = texts.slice(i, i + BATCH_SIZE);
-        log.debug(`Embedding batch ${Math.floor(i / BATCH_SIZE) + 1}`, {
+    for (let i = 0; i < embedBatchCount; i++) {
+      const start = i * EMBED_BATCH_SIZE;
+      const end = Math.min(start + EMBED_BATCH_SIZE, texts.length);
+
+      const batchEmbeddings = await step.run(`embed-batch-${i}`, async () => {
+        await updateJobStatus(jobId, 'processing', {
+          progress: `Generating embeddings (batch ${i + 1}/${embedBatchCount})`,
+        });
+
+        const batch = texts.slice(start, end);
+        log.info(`Embedding batch ${i + 1}/${embedBatchCount}`, {
+          jobId,
           batchSize: batch.length,
         });
-        const batchEmbeddings = await getEmbeddings(batch, 'passage');
-        allEmbeddings.push(...batchEmbeddings);
-      }
 
-      log.info('Embeddings generated', { jobId, count: allEmbeddings.length });
-      return allEmbeddings;
+        const embeddings = await getEmbeddings(batch, 'passage');
+        log.info(`Embedding batch ${i + 1} complete`, {
+          jobId,
+          count: embeddings.length,
+        });
+
+        return embeddings;
+      });
+
+      allEmbeddings.push(...batchEmbeddings);
+    }
+
+    log.info('All embeddings generated', {
+      jobId,
+      totalBatches: embedBatchCount,
+      totalEmbeddings: allEmbeddings.length,
     });
 
-    // ── Step 6: Store in MongoDB ──────────────────────────────────────────
+    // ── Step 5: Store in MongoDB ──────────────────────────────────────────
     const result = await step.run('store-chunks', async () => {
       await updateJobStatus(jobId, 'processing', {
         progress: 'Storing in knowledge base',
@@ -175,7 +256,7 @@ export const documentIngestionFunction = inngest.createFunction(
       const documentChunks: DocumentChunk[] = summarizedChunks.map((chunk, index) => ({
         _id: new ObjectId(),
         text: chunk.content,
-        embedding: embeddings[index],
+        embedding: allEmbeddings[index],
         parentContent: chunk.parentContent,
         chunkType: chunk.type,
         headingPath: chunk.headingPath,
@@ -203,7 +284,7 @@ export const documentIngestionFunction = inngest.createFunction(
       return result;
     });
 
-    // ── Step 7: Mark Complete ─────────────────────────────────────────────
+    // ── Step 6: Mark Complete ─────────────────────────────────────────────
     await step.run('update-status', async () => {
       await updateJobStatus(jobId, 'completed', {
         progress: 'Indexed successfully',
