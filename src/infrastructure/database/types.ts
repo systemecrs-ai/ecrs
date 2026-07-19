@@ -10,47 +10,27 @@
 
 import { ObjectId } from 'mongodb';
 
-// ─── Product Types ──────────────────────────────────────────────────────────
+import { Product, DocumentSearchResult, UserMemory } from '@/core/types';
 
-/**
- * Raw MongoDB product document as stored in the collection.
- * Contains the embedding vector field used by Atlas Vector Search.
- */
-export interface ProductDocument {
+// ─── Unified Node Types ─────────────────────────────────────────────────────
+
+export type BaseUnifiedNode = {
   _id: ObjectId;
-  sku?: string;
-  name: string;
-  description: string;
-  category: string;
-  subcategory: string;
-  brand: string;
-  price: number;
-  currency: string;
-  colors: string[];
-  sizes: string[];
-  material: string;
-  gender: 'men' | 'women' | 'unisex';
-  imageUrl: string;
-  inStock: boolean;
-  rating: number;
-  reviewCount: number;
-  tags: string[];
-  embedding: number[];
-  createdAt: Date;
-  updatedAt: Date;
-}
+  embedding: number[]; // 2048-dimensional
+};
 
-/**
- * Result of a vector search operation,
- * includes the similarity score from Atlas Vector Search.
- */
-export interface ProductSearchDocument extends Omit<ProductDocument, 'embedding'> {
-  score: number;
-}
+export type ProductNode = BaseUnifiedNode & { type: 'product' } & Omit<Product, 'id'>;
+export type DocumentNode = BaseUnifiedNode & { type: 'document' } & Omit<DocumentSearchResult, 'id' | 'score'>;
+export type MemoryNode = BaseUnifiedNode & { type: 'memory' } & UserMemory;
 
-/**
- * Optional filter criteria for narrowing vector search results.
- */
+export type UnifiedNode = ProductNode | DocumentNode | MemoryNode;
+
+// Search Results (extending nodes with score)
+export type ProductSearchDocument = ProductNode & { score: number };
+export type DocumentSearchChunk = DocumentNode & { score: number };
+export type UserMemorySearchResult = MemoryNode & { score: number };
+
+// Filters
 export interface ProductFilter {
   category?: string;
   subcategory?: string;
@@ -59,75 +39,6 @@ export interface ProductFilter {
   maxPrice?: number;
   brand?: string;
   inStock?: boolean;
-}
-
-// ─── Document Chunk Types (Parent-Child Schema) ─────────────────────────────
-
-/**
- * A semantic chunk of content parsed from an uploaded document.
- * Supports parent-child retrieval: for tables and images, the
- * vectorized `text` is a summary (child), and `parentContent`
- * holds the full raw Markdown (parent).
- */
-export interface DocumentChunk {
-  _id: ObjectId;
-  /** Vectorized content — summary for child chunks, full text otherwise */
-  text: string;
-  /** Embedding vector for Atlas Vector Search */
-  embedding: number[];
-  /** Full raw Markdown content — populated for parent-child chunks */
-  parentContent?: string;
-  /** Content classification */
-  chunkType: 'text' | 'table' | 'image_description' | 'heading_section';
-  /** Heading hierarchy breadcrumb path */
-  headingPath: string[];
-  /** Chunk metadata */
-  metadata: {
-    filename: string;
-    chunkId: number;
-    timestamp: Date;
-    fileType: string;
-    hasTable: boolean;
-    hasImage: boolean;
-    /** True if `text` is a summary pointing to `parentContent` */
-    isChildSummary: boolean;
-  };
-}
-
-/**
- * Result of a vector search operation on document chunks.
- * For child summaries, the `parentContent` field contains the
- * full raw content that should be included in the LLM prompt.
- */
-export interface DocumentSearchChunk extends Omit<DocumentChunk, 'embedding'> {
-  score: number;
-}
-
-// ─── User Memory Types ──────────────────────────────────────────────────────
-
-/**
- * MongoDB document for the user_memory_vectors collection.
- * Stores extracted permanent user traits as vectorized summaries.
- */
-export interface UserMemoryDocument {
-  _id: ObjectId;
-  /** Client-generated session identifier */
-  sessionId: string;
-  /** Natural language summary of user preferences and traits */
-  summary: string;
-  /** Embedding vector of the summary for retrieval */
-  embedding: number[];
-  /** When this memory was last updated */
-  lastUpdated: Date;
-  /** Number of messages analyzed to produce this summary */
-  messageCount: number;
-}
-
-/**
- * Result of a vector search on user memory.
- */
-export interface UserMemorySearchResult extends Omit<UserMemoryDocument, 'embedding'> {
-  score: number;
 }
 
 // ─── Chat History Types ─────────────────────────────────────────────────────

@@ -17,7 +17,8 @@
  * @module core/rag-pipeline
  */
 
-import { streamText } from 'ai';
+import { streamText, rerank } from 'ai';
+import { cohere } from '@ai-sdk/cohere';
 import { getEmbedding, getChatModel } from '@/infrastructure/nvidia/nvidia-client';
 import { hybridSearch } from '@/infrastructure/database/product-repository';
 import { searchDocumentChunks } from '@/infrastructure/database/document-repository';
@@ -25,7 +26,6 @@ import { buildSystemPrompt, buildMessages } from './prompt-builder';
 import { retrieveUserMemory, maybeDispatchMemorySummarization } from './memory-service';
 import { appendMessage } from '@/infrastructure/database/chat-history-repository';
 import { Message, ProductSearchResult, DocumentSearchResult, RAGContext } from './types';
-import { ProductSearchDocument, DocumentSearchChunk } from '@/infrastructure/database/types';
 import {
   VECTOR_SEARCH_LIMIT,
   DOCUMENT_SEARCH_LIMIT,
@@ -95,13 +95,13 @@ export async function executeRAGPipeline(
     // Search 1: Products
     hybridSearch(userQuery, queryEmbedding, VECTOR_SEARCH_LIMIT).catch(error => {
       log.error('Product search failed', { error: (error as Error).message });
-      return [] as ProductSearchDocument[];
+      return [] as ProductSearchResult[];
     }),
 
     // Search 2: Documents
     searchDocumentChunks(queryEmbedding, DOCUMENT_SEARCH_LIMIT).catch(error => {
       log.error('Document search failed', { error: (error as Error).message });
-      return [] as DocumentSearchChunk[];
+      return [] as DocumentSearchResult[];
     }),
 
     // Search 3: User Memory (only if sessionId provided)
@@ -116,9 +116,57 @@ export async function executeRAGPipeline(
     hasMemory: !!userMemory,
   });
 
-  // Map database documents to domain types
-  const retrievedProducts: ProductSearchResult[] = productResults.map(mapToProductSearchResult);
-  const retrievedDocuments: DocumentSearchResult[] = documentResults.map(mapToDocumentSearchResult);
+  // ── Stage 2.5: Reranking ───────────────────────────────────────────────
+  log.info('Stage 2.5: Reranking candidate chunks with Cohere');
+
+  // Map products and documents into unified candidate chunks
+  const candidateChunks = [
+    ...productResults.map(p => ({
+      type: 'product' as const,
+      domainObject: p,
+      text: `${p.name} - ${p.brand} - ${p.category}. ${p.description}`,
+    })),
+    ...documentResults.map(d => ({
+      type: 'document' as const,
+      domainObject: d,
+      text: d.text,
+    }))
+  ];
+
+  let rerankedProducts: ProductSearchResult[] = [];
+  let rerankedDocuments: DocumentSearchResult[] = [];
+
+  if (candidateChunks.length > 0) {
+    try {
+      const texts = candidateChunks.map(c => c.text);
+      const { ranking } = await rerank({
+        model: cohere.reranking('rerank-english-v3.0'),
+        query: userQuery,
+        documents: texts,
+        topN: 5,
+      });
+
+      log.info('Reranking completed', { originalCount: candidateChunks.length, newCount: ranking.length });
+
+      // Map back to original domain objects using originalIndex
+      ranking.forEach((result: { originalIndex: number }) => {
+        const originalChunk = candidateChunks[result.originalIndex];
+        if (originalChunk.type === 'product') {
+          rerankedProducts.push(originalChunk.domainObject as ProductSearchResult);
+        } else {
+          rerankedDocuments.push(originalChunk.domainObject as DocumentSearchResult);
+        }
+      });
+    } catch (error) {
+      log.error('Reranking failed, falling back to original results', { error: (error as Error).message });
+      // Fallback
+      rerankedProducts = productResults.slice(0, 5);
+      rerankedDocuments = documentResults.slice(0, 5);
+    }
+  }
+
+  const retrievedProducts: ProductSearchResult[] = rerankedProducts;
+  const retrievedDocuments: DocumentSearchResult[] = rerankedDocuments;
 
   // ── Stage 3: Build Prompt (Triple Context) ──────────────────────────────
   log.info('Stage 3: Building system prompt with triple context');
@@ -203,51 +251,3 @@ async function persistAndTriggerMemory(
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-/**
- * Maps a MongoDB ProductSearchDocument to a domain ProductSearchResult.
- */
-function mapToProductSearchResult(doc: ProductSearchDocument): ProductSearchResult {
-  return {
-    id: doc._id.toString(),
-    sku: doc.sku,
-    name: doc.name,
-    description: doc.description,
-    category: doc.category,
-    subcategory: doc.subcategory,
-    brand: doc.brand,
-    price: doc.price,
-    currency: doc.currency ?? 'USD',
-    colors: doc.colors,
-    sizes: doc.sizes,
-    material: doc.material,
-    gender: doc.gender,
-    imageUrl: doc.imageUrl,
-    inStock: doc.inStock,
-    rating: doc.rating,
-    reviewCount: doc.reviewCount,
-    tags: doc.tags ?? [],
-    score: doc.score,
-  };
-}
-
-/**
- * Maps a MongoDB DocumentSearchChunk to a domain DocumentSearchResult.
- */
-function mapToDocumentSearchResult(doc: DocumentSearchChunk): DocumentSearchResult {
-  return {
-    id: doc._id.toString(),
-    text: doc.text,
-    parentContent: doc.parentContent,
-    chunkType: doc.chunkType,
-    headingPath: doc.headingPath ?? [],
-    score: doc.score,
-    metadata: {
-      filename: doc.metadata?.filename ?? 'unknown',
-      chunkId: doc.metadata?.chunkId ?? 0,
-      hasTable: doc.metadata?.hasTable ?? false,
-      hasImage: doc.metadata?.hasImage ?? false,
-      isChildSummary: doc.metadata?.isChildSummary ?? false,
-    },
-  };
-}

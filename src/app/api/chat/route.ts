@@ -92,9 +92,9 @@ export async function POST(req: Request): Promise<Response> {
     // ── Execute RAG Pipeline (Triple-Retrieval) ──────────────────────────
     const { stream } = await executeRAGPipeline(userQuery, chatHistory, sessionId);
 
-    // ── Return Streaming Response ────────────────────────────────────────
-    return stream.toUIMessageStreamResponse();
 
+    // ── Return Streaming Response ────────────────────────────────────────
+    return stream.toTextStreamResponse();
   } catch (error) {
     return handleError(error);
   }

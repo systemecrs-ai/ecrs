@@ -12,10 +12,12 @@
  */
 
 import { getDatabase } from './mongodb-client';
-import { DocumentChunk, DocumentSearchChunk } from './types';
+import { UnifiedNode, DocumentNode } from './types';
+import { DocumentSearchResult } from '@/core/types';
+import { ObjectId } from 'mongodb';
 import {
-  DOCUMENTS_COLLECTION,
-  DOCUMENTS_VECTOR_SEARCH_INDEX,
+  UNIFIED_NODES_COLLECTION,
+  UNIFIED_VECTOR_INDEX,
   VECTOR_FIELD_PATH,
   VECTOR_NUM_CANDIDATES,
   DOCUMENT_SEARCH_LIMIT,
@@ -33,20 +35,28 @@ const log = createLogger('DocumentRepository');
  * @param chunks - Array of DocumentChunk objects to insert
  * @throws {DatabaseError} If the bulk insert operation fails
  */
-export async function bulkInsertChunks(chunks: DocumentChunk[]): Promise<void> {
+export type InsertDocumentChunk = Omit<DocumentNode, '_id' | 'type'> & { _id?: ObjectId };
+
+export async function bulkInsertChunks(chunks: InsertDocumentChunk[]): Promise<void> {
   if (!chunks.length) return;
 
   try {
     const db = await getDatabase();
-    const collection = db.collection<DocumentChunk>(DOCUMENTS_COLLECTION);
+    const collection = db.collection<UnifiedNode>(UNIFIED_NODES_COLLECTION);
     
     log.info('Bulk inserting document chunks', {
       count: chunks.length,
       childSummaries: chunks.filter(c => c.metadata.isChildSummary).length,
       tables: chunks.filter(c => c.chunkType === 'table').length,
     });
+
+    const documentsToInsert: DocumentNode[] = chunks.map(chunk => ({
+      ...chunk,
+      _id: chunk._id || new ObjectId(),
+      type: 'document'
+    }));
     
-    await collection.insertMany(chunks, { ordered: false });
+    await collection.insertMany(documentsToInsert, { ordered: false });
     
     log.info('Successfully inserted document chunks', { count: chunks.length });
   } catch (error) {
@@ -71,10 +81,10 @@ export async function bulkInsertChunks(chunks: DocumentChunk[]): Promise<void> {
 export async function searchDocumentChunks(
   queryEmbedding: number[],
   limit: number = DOCUMENT_SEARCH_LIMIT
-): Promise<DocumentSearchChunk[]> {
+): Promise<DocumentSearchResult[]> {
   try {
     const db = await getDatabase();
-    const collection = db.collection<DocumentChunk>(DOCUMENTS_COLLECTION);
+    const collection = db.collection<UnifiedNode>(UNIFIED_NODES_COLLECTION);
 
     log.info('Executing document vector search', {
       embeddingLength: queryEmbedding.length,
@@ -84,11 +94,12 @@ export async function searchDocumentChunks(
     const pipeline: Document[] = [
       {
         $vectorSearch: {
-          index: DOCUMENTS_VECTOR_SEARCH_INDEX,
+          index: UNIFIED_VECTOR_INDEX,
           path: VECTOR_FIELD_PATH,
           queryVector: queryEmbedding,
           numCandidates: VECTOR_NUM_CANDIDATES,
           limit,
+          filter: { type: 'document' },
         },
       },
       {
@@ -104,15 +115,27 @@ export async function searchDocumentChunks(
       },
     ];
 
-    const results = await collection.aggregate<DocumentSearchChunk>(pipeline).toArray();
+    const results = await collection.aggregate<any>(pipeline).toArray();
 
-    log.info('Document vector search completed', {
-      resultCount: results.length,
-      topScore: results[0]?.score ?? 0,
-      parentChildResults: results.filter(r => r.metadata?.isChildSummary).length,
+    const mappedResults: DocumentSearchResult[] = results.map(doc => {
+      return {
+        id: doc._id.toString(),
+        text: doc.text,
+        parentContent: doc.parentContent,
+        chunkType: doc.chunkType,
+        headingPath: doc.headingPath,
+        metadata: doc.metadata,
+        score: doc.score,
+      };
     });
 
-    return results;
+    log.info('Document vector search completed', {
+      resultCount: mappedResults.length,
+      topScore: mappedResults[0]?.score ?? 0,
+      parentChildResults: mappedResults.filter(r => r.metadata?.isChildSummary).length,
+    });
+
+    return mappedResults;
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
     log.error('Document vector search failed', { error: err.message });

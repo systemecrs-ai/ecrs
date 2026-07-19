@@ -9,10 +9,11 @@
  */
 
 import { getDatabase } from './mongodb-client';
-import { UserMemoryDocument, UserMemorySearchResult } from './types';
+import { UnifiedNode, MemoryNode } from './types';
+import { UserMemory } from '@/core/types';
 import {
-  USER_MEMORY_COLLECTION,
-  USER_MEMORY_VECTOR_INDEX,
+  UNIFIED_NODES_COLLECTION,
+  UNIFIED_VECTOR_INDEX,
   VECTOR_FIELD_PATH,
   VECTOR_NUM_CANDIDATES,
   MEMORY_SEARCH_LIMIT,
@@ -40,21 +41,21 @@ export async function upsertUserMemory(
 ): Promise<void> {
   try {
     const db = await getDatabase();
-    const collection = db.collection<UserMemoryDocument>(USER_MEMORY_COLLECTION);
+    const collection = db.collection<UnifiedNode>(UNIFIED_NODES_COLLECTION);
 
     log.info('Upserting user memory', { sessionId, summaryLength: summary.length });
 
     await collection.updateOne(
-      { sessionId },
+      { sessionId, type: 'memory' },
       {
         $set: {
           summary,
           embedding,
           lastUpdated: new Date(),
-          messageCount,
         },
         $setOnInsert: {
           _id: new ObjectId(),
+          type: 'memory',
         },
       },
       { upsert: true }
@@ -81,22 +82,22 @@ export async function searchUserMemory(
   sessionId: string,
   queryEmbedding: number[],
   limit: number = MEMORY_SEARCH_LIMIT
-): Promise<UserMemorySearchResult[]> {
+): Promise<UserMemory[]> {
   try {
     const db = await getDatabase();
-    const collection = db.collection<UserMemoryDocument>(USER_MEMORY_COLLECTION);
+    const collection = db.collection<UnifiedNode>(UNIFIED_NODES_COLLECTION);
 
     log.info('Searching user memory', { sessionId, limit });
 
     const pipeline: Document[] = [
       {
         $vectorSearch: {
-          index: USER_MEMORY_VECTOR_INDEX,
+          index: UNIFIED_VECTOR_INDEX,
           path: VECTOR_FIELD_PATH,
           queryVector: queryEmbedding,
           numCandidates: VECTOR_NUM_CANDIDATES,
           limit,
-          filter: { sessionId },
+          filter: { sessionId, type: 'memory' },
         },
       },
       {
@@ -105,21 +106,26 @@ export async function searchUserMemory(
           sessionId: 1,
           summary: 1,
           lastUpdated: 1,
-          messageCount: 1,
           score: { $meta: 'vectorSearchScore' },
         },
       },
     ];
 
-    const results = await collection.aggregate<UserMemorySearchResult>(pipeline).toArray();
+    const results = await collection.aggregate<any>(pipeline).toArray();
+
+    const mappedResults: UserMemory[] = results.map(doc => ({
+      sessionId: doc.sessionId,
+      summary: doc.summary,
+      lastUpdated: doc.lastUpdated,
+    }));
 
     log.info('User memory search completed', {
       sessionId,
-      resultCount: results.length,
+      resultCount: mappedResults.length,
       topScore: results[0]?.score ?? 0,
     });
 
-    return results;
+    return mappedResults;
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
     log.error('User memory search failed', { sessionId, error: err.message });
@@ -137,11 +143,17 @@ export async function searchUserMemory(
  */
 export async function getUserMemoryBySession(
   sessionId: string
-): Promise<UserMemoryDocument | null> {
+): Promise<UserMemory | null> {
   try {
     const db = await getDatabase();
-    const collection = db.collection<UserMemoryDocument>(USER_MEMORY_COLLECTION);
-    return await collection.findOne({ sessionId });
+    const collection = db.collection<UnifiedNode>(UNIFIED_NODES_COLLECTION);
+    const doc = await collection.findOne({ sessionId, type: 'memory' }) as MemoryNode | null;
+    if (!doc) return null;
+    return {
+      sessionId: doc.sessionId,
+      summary: doc.summary,
+      lastUpdated: doc.lastUpdated,
+    };
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
     log.error('Failed to fetch user memory', { sessionId, error: err.message });

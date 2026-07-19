@@ -19,8 +19,7 @@ import { parseDocument } from '@/infrastructure/parsing/parser';
 import { splitMarkdownIntoChunks, StructuredChunk } from '@/infrastructure/parsing/markdown-chunker';
 import { generateChunkSummary } from '@/core/summarization-service';
 import { getEmbeddings } from '@/infrastructure/nvidia/nvidia-client';
-import { bulkInsertChunks } from '@/infrastructure/database/document-repository';
-import { DocumentChunk } from '@/infrastructure/database/types';
+import { bulkInsertChunks, InsertDocumentChunk } from '@/infrastructure/database/document-repository';
 import { createLogger } from '@/lib/logger';
 import { ObjectId } from 'mongodb';
 
@@ -85,7 +84,7 @@ export async function processDocument(
   log.info('Stage 5: Injecting into database');
   const timestamp = new Date();
   
-  const documentChunks: DocumentChunk[] = processedChunks.map((chunk, index) => ({
+  const documentChunks: InsertDocumentChunk[] = processedChunks.map((chunk, index) => ({
     _id: new ObjectId(),
     text: chunk.content,
     embedding: embeddings[index],

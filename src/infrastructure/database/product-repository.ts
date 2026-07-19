@@ -8,10 +8,11 @@
  */
 
 import { getDatabase } from './mongodb-client';
-import { ProductDocument, ProductSearchDocument, ProductFilter } from './types';
+import { UnifiedNode, ProductFilter } from './types';
+import { Product, ProductSearchResult } from '@/core/types';
 import {
-  PRODUCTS_COLLECTION,
-  VECTOR_SEARCH_INDEX,
+  UNIFIED_NODES_COLLECTION,
+  UNIFIED_VECTOR_INDEX,
   VECTOR_FIELD_PATH,
   VECTOR_NUM_CANDIDATES,
   VECTOR_SEARCH_LIMIT,
@@ -39,10 +40,10 @@ export async function hybridSearch(
   queryEmbedding: number[],
   limit: number = VECTOR_SEARCH_LIMIT,
   filter?: ProductFilter
-): Promise<ProductSearchDocument[]> {
+): Promise<ProductSearchResult[]> {
   try {
     const db = await getDatabase();
-    const collection = db.collection<ProductDocument>(PRODUCTS_COLLECTION);
+    const collection = db.collection<UnifiedNode>(UNIFIED_NODES_COLLECTION);
 
     log.info('Executing hybrid search', {
       queryText,
@@ -52,21 +53,19 @@ export async function hybridSearch(
     });
 
     const filterConditions = filter ? buildFilterConditions(filter) : {};
-    const hasFilters = Object.keys(filterConditions).length > 0;
+    filterConditions.type = 'product';
 
     // Build the $vectorSearch stage
     const vectorSearchStage: Document = {
       $vectorSearch: {
-        index: VECTOR_SEARCH_INDEX,
+        index: UNIFIED_VECTOR_INDEX,
         path: VECTOR_FIELD_PATH,
         queryVector: queryEmbedding,
         numCandidates: VECTOR_NUM_CANDIDATES,
         limit: limit * 2, // over-fetch for RRF
+        filter: filterConditions,
       },
     };
-    if (hasFilters) {
-      vectorSearchStage.$vectorSearch.filter = filterConditions;
-    }
 
     // Build the $search stage for lexical match
     const lexicalSearchStage: Document = {
@@ -112,7 +111,7 @@ export async function hybridSearch(
 
     const lexicalPipeline: Document[] = [
       lexicalSearchStage,
-      ...(hasFilters ? [{ $match: filterConditions }] : []),
+      { $match: filterConditions },
       { $limit: limit * 2 },
       commonProjectStage,
     ];
@@ -150,14 +149,38 @@ export async function hybridSearch(
     // Sort by combined RRF score descending and limit
     const mergedResults = Array.from(rrfMap.values())
       .sort((a, b) => b.rrfScore - a.rrfScore)
-      .slice(0, limit);
+      .slice(0, limit)
+      .map(doc => {
+        const { _id, score } = doc;
+        return {
+          id: _id.toString(),
+          name: doc.name,
+          description: doc.description,
+          category: doc.category,
+          subcategory: doc.subcategory,
+          brand: doc.brand,
+          price: doc.price,
+          currency: doc.currency,
+          colors: doc.colors,
+          sizes: doc.sizes,
+          material: doc.material,
+          gender: doc.gender,
+          imageUrl: doc.imageUrl,
+          inStock: doc.inStock,
+          rating: doc.rating,
+          reviewCount: doc.reviewCount,
+          sku: doc.sku,
+          tags: doc.tags,
+          score
+        } as ProductSearchResult;
+      });
 
     log.info('Hybrid search completed', {
       mergedResultCount: mergedResults.length,
       topScore: mergedResults[0]?.score ?? 0,
     });
 
-    return mergedResults as ProductSearchDocument[];
+    return mergedResults;
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
     log.error('Hybrid search failed', { error: err.message });
@@ -173,12 +196,15 @@ export async function hybridSearch(
  */
 export async function getProductById(
   id: string
-): Promise<ProductDocument | null> {
+): Promise<Product | null> {
   try {
     const { ObjectId } = await import('mongodb');
     const db = await getDatabase();
-    const collection = db.collection<ProductDocument>(PRODUCTS_COLLECTION);
-    return await collection.findOne({ _id: new ObjectId(id) });
+    const collection = db.collection<UnifiedNode>(UNIFIED_NODES_COLLECTION);
+    const doc = await collection.findOne({ _id: new ObjectId(id), type: 'product' });
+    if (!doc) return null;
+    const { _id, type, embedding, ...rest } = doc;
+    return { id: _id.toString(), ...rest } as Product;
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
     log.error('Failed to fetch product by ID', { id, error: err.message });
@@ -191,8 +217,8 @@ export async function getProductById(
  */
 export async function getProductCount(): Promise<number> {
   const db = await getDatabase();
-  const collection = db.collection<ProductDocument>(PRODUCTS_COLLECTION);
-  return collection.countDocuments();
+  const collection = db.collection<UnifiedNode>(UNIFIED_NODES_COLLECTION);
+  return collection.countDocuments({ type: 'product' });
 }
 
 // ─── Private Helpers ────────────────────────────────────────────────────────

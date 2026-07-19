@@ -11,6 +11,7 @@
  */
 
 import { useChat } from '@ai-sdk/react';
+import { TextStreamChatTransport } from 'ai';
 import { useRef, useEffect, useState, useCallback, type FormEvent } from 'react';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
@@ -18,7 +19,6 @@ import TypingIndicator from '@/components/ui/TypingIndicator';
 import RetrievalIndicator from '@/components/ui/RetrievalIndicator';
 import { SUGGESTED_QUERIES } from '@/config/constants';
 import { MessageSquarePlus } from 'lucide-react';
-import { useSmoothStream } from './useSmoothStream';
 import Image from 'next/image';
 
 /**
@@ -26,22 +26,27 @@ import Image from 'next/image';
  */
 function getSessionId(): string {
   if (typeof window === 'undefined') return 'server';
-  
+
   const key = 'ecrs-session-id';
   let sessionId = localStorage.getItem(key);
-  
+
   if (!sessionId) {
     sessionId = crypto.randomUUID();
     localStorage.setItem(key, sessionId);
   }
-  
+
   return sessionId;
 }
 
 /**
- * Extracts text content from a UIMessage's parts array.
+ * Robustly extracts text content from a UIMessage supporting both 
+ * flat text streams and multi-part data payload elements.
  */
-function getMessageText(message: { parts?: Array<{ type: string; text?: string }> }): string {
+function getMessageText(message: { content?: string; parts?: Array<{ type: string; text?: string }> }): string {
+  // Priority 1: Extract direct streaming text string accumulator
+  if (message.content) return message.content;
+
+  // Priority 2: Fall back to parsing structural text tokens out of parts array
   if (!message.parts) return '';
   return message.parts
     .filter((part): part is { type: 'text'; text: string } => part.type === 'text' && typeof part.text === 'string')
@@ -54,16 +59,14 @@ export default function ChatInterface() {
 
   const { messages, sendMessage, status, error, setMessages } = useChat({
     id: sessionId,
+    transport: new TextStreamChatTransport({ api: '/api/chat' }),
   });
 
   const [inputValue, setInputValue] = useState('');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  
+
   const isLoading = status === 'submitted' || status === 'streaming';
-  const isStreaming = status === 'streaming';
   const isSubmitted = status === 'submitted';
-  
-  const smoothedMessages = useSmoothStream(messages, isStreaming);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -97,7 +100,7 @@ export default function ChatInterface() {
     setMessages([]);
   }, [setMessages]);
 
-  const hasMessages = smoothedMessages.length > 0;
+  const hasMessages = messages.length > 0;
 
   return (
     <div className="flex h-full flex-col bg-black/40">
@@ -164,7 +167,7 @@ export default function ChatInterface() {
         ) : (
           /* ── Messages List ──────────────────────────────────────── */
           <div className="flex flex-col py-6">
-            {smoothedMessages.map((message) => (
+            {messages.map((message) => (
               <MessageBubble
                 key={message.id}
                 role={message.role as 'user' | 'assistant'}

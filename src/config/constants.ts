@@ -9,13 +9,13 @@
 
 // ─── MongoDB Vector Search ──────────────────────────────────────────────────
 
-/** Name of the MongoDB collection storing product documents */
-export const PRODUCTS_COLLECTION = 'products';
+/** Name of the unified MongoDB collection storing polymorphic nodes */
+export const UNIFIED_NODES_COLLECTION = 'unified_nodes';
 
-/** Name of the Atlas Vector Search index */
-export const VECTOR_SEARCH_INDEX = 'product_vector_index';
+/** Name of the unified Atlas Vector Search index */
+export const UNIFIED_VECTOR_INDEX = 'unified_vector_index';
 
-/** Field path containing the embedding vector in product documents */
+/** Field path containing the embedding vector in polymorphic documents */
 export const VECTOR_FIELD_PATH = 'embedding';
 
 /** Number of candidate vectors to consider during ANN search (10:1 ratio to limit) */
@@ -24,28 +24,16 @@ export const VECTOR_NUM_CANDIDATES = 150;
 /** Default number of results to return from vector search */
 export const VECTOR_SEARCH_LIMIT = 10;
 
-/** Name of the MongoDB collection storing ingested documents */
-export const DOCUMENTS_COLLECTION = 'document_chunks';
-
-/** Name of the Atlas Vector Search index for documents */
-export const DOCUMENTS_VECTOR_SEARCH_INDEX = 'document_vector_index';
-
 /** Maximum character length for a semantic document chunk */
 export const CHUNK_MAX_CHARS = 2000;
 
-/** Dimensionality of nvidia/llama-nemotron-embed-1b-v2 embeddings */
-export const EMBEDDING_DIMENSIONS = 1024;
+/** Dimensionality of the embeddings (updated for new schema) */
+export const EMBEDDING_DIMENSIONS = 2048;
 
 /** Maximum number of document chunks to retrieve per query */
 export const DOCUMENT_SEARCH_LIMIT = 5;
 
 // ─── User Memory ────────────────────────────────────────────────────────────
-
-/** Name of the MongoDB collection storing user memory vectors */
-export const USER_MEMORY_COLLECTION = 'user_memory_vectors';
-
-/** Name of the Atlas Vector Search index for user memory */
-export const USER_MEMORY_VECTOR_INDEX = 'user_memory_vector_index';
 
 /** Maximum number of memory vectors to retrieve per query */
 export const MEMORY_SEARCH_LIMIT = 3;
