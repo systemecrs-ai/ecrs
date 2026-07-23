@@ -18,6 +18,9 @@ interface EnvConfig {
   LLAMA_CLOUD_API_KEY: string;
   BLOB_READ_WRITE_TOKEN: string;
   NODE_ENV: string;
+  LANGFUSE_SECRET_KEY: string;
+  LANGFUSE_PUBLIC_KEY: string;
+  LANGFUSE_BASE_URL: string;
 }
 
 /**
@@ -75,6 +78,9 @@ export function getEnvConfig(): EnvConfig {
     LLAMA_CLOUD_API_KEY: getRequiredEnv('LLAMA_CLOUD_API_KEY'),
     BLOB_READ_WRITE_TOKEN: getOptionalEnv('BLOB_READ_WRITE_TOKEN', ''),
     NODE_ENV: getOptionalEnv('NODE_ENV', 'development'),
+    LANGFUSE_SECRET_KEY: getOptionalEnv('LANGFUSE_SECRET_KEY', ''),
+    LANGFUSE_PUBLIC_KEY: getOptionalEnv('LANGFUSE_PUBLIC_KEY', ''),
+    LANGFUSE_BASE_URL: getOptionalEnv('LANGFUSE_BASE_URL', 'https://cloud.langfuse.com'),
   };
 
   return _cachedConfig;
@@ -92,3 +98,7 @@ export const getNvidiaSummarizationModel = () => getEnvConfig().NVIDIA_SUMMARIZA
 export const getLlamaCloudApiKey = () => getEnvConfig().LLAMA_CLOUD_API_KEY;
 export const getBlobReadWriteToken = () => getEnvConfig().BLOB_READ_WRITE_TOKEN;
 export const isDevelopment = () => getEnvConfig().NODE_ENV === 'development';
+export const getLangfuseSecretKey = () => getEnvConfig().LANGFUSE_SECRET_KEY;
+export const getLangfusePublicKey = () => getEnvConfig().LANGFUSE_PUBLIC_KEY;
+export const getLangfuseBaseUrl = () => getEnvConfig().LANGFUSE_BASE_URL;
+export const isLangfuseEnabled = () => !!getEnvConfig().LANGFUSE_SECRET_KEY && !!getEnvConfig().LANGFUSE_PUBLIC_KEY;
