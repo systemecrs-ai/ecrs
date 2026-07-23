@@ -22,8 +22,8 @@ import { randomUUID } from 'crypto';
 
 const log = createLogger('PresignRoute');
 
-/** Maximum file size (10MB) */
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+/** Maximum file size (20MB) */
+const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
 
 /** Allowed MIME types for document ingestion */
 const ALLOWED_MIME_TYPES = ['application/pdf', 'text/plain'];
