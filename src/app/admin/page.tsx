@@ -4,17 +4,19 @@ import AdminSidebar from '@/components/admin/AdminSidebar';
 import FileUploadZone from '@/components/admin/FileUploadZone';
 import RecentIngestions from '@/components/admin/RecentIngestions';
 
+/**
+ * Admin Dashboard Page (Default Tab)
+ * 
+ * Renders the FileUploadZone and RecentIngestions components.
+ * The shared admin shell (background + auth guard) is provided
+ * by the parent layout.tsx.
+ */
 export default function AdminDashboardPage() {
   return (
-    <div className="flex h-screen overflow-hidden bg-black selection:bg-indigo-500/30">
-      {/* Background Decorators */}
-      <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-900/10 via-[#0a0a0a] to-black z-0"></div>
+    <>
+      <AdminSidebar />
 
-      <div className="relative z-10">
-        <AdminSidebar />
-      </div>
-
-      <div className="relative z-10 flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto">
         <div className="p-8 lg:p-12">
           <div className="mb-8">
             <h1 className="text-2xl font-bold tracking-tight text-white">Dashboard</h1>
@@ -32,6 +34,6 @@ export default function AdminDashboardPage() {
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

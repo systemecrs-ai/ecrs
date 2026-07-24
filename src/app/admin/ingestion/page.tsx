@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, Trash2, FileText, CheckCircle2, XCircle, Clock, ChevronRight, X } from 'lucide-react';
+import AdminSidebar from '@/components/admin/AdminSidebar';
 
 interface IngestionJob {
   _id: string;
@@ -28,9 +29,6 @@ export default function AdminIngestionPage() {
   const fetchJobs = async () => {
     try {
       setIsLoading(true);
-      // Wait, we need an API endpoint to GET all jobs. 
-      // I didn't create `GET /api/admin/ingestion/jobs` yet. 
-      // Let's create it or just fetch from an existing one? I'll create `GET /api/admin/ingestion/jobs`.
       const res = await fetch('/api/admin/ingestion/jobs');
       const data = await res.json();
       if (data.jobs) {
@@ -80,7 +78,9 @@ export default function AdminIngestionPage() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-slate-200 p-8 font-sans selection:bg-indigo-500/30">
+    <>
+      <AdminSidebar />
+      <div className="flex-1 overflow-y-auto text-slate-200 p-8 font-sans">
       <div className="max-w-6xl mx-auto">
         <header className="flex items-center justify-between mb-8">
           <div>
@@ -165,6 +165,7 @@ export default function AdminIngestionPage() {
             </tbody>
           </table>
         </div>
+      </div>
       </div>
 
       {/* Detail View Drawer */}
@@ -260,6 +261,6 @@ export default function AdminIngestionPage() {
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </>
   );
 }

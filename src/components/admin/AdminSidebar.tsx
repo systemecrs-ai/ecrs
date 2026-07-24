@@ -1,13 +1,12 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import { Database, FileText, Settings, LayoutDashboard } from 'lucide-react';
+import { Database, FileText, LayoutDashboard } from 'lucide-react';
 
 const navItems = [
-  { name: 'Dashboard', href: '/admin', icon: LayoutDashboard },
-  { name: 'Data Ingestion', href: '/admin/ingestion', icon: Database },
-  { name: 'Documents', href: '/admin/docs', icon: FileText },
-  { name: 'Settings', href: '/admin/settings', icon: Settings },
+  { name: 'Dashboard', href: '/admin', icon: LayoutDashboard, exact: true },
+  { name: 'Data Ingestion', href: '/admin/ingestion', icon: Database, exact: false },
+  { name: 'Documents', href: '/admin/docs', icon: FileText, exact: false },
 ];
 
 export default function AdminSidebar() {
@@ -32,12 +31,14 @@ export default function AdminSidebar() {
 
       <nav className="flex-1 space-y-1 p-4">
         {navItems.map((item) => {
-          const isActive = pathname === item.href;
+          const isActive = item.exact
+            ? pathname === item.href
+            : pathname.startsWith(item.href);
           return (
             <Link
               key={item.name}
               href={item.href}
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all ${
+              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
                 isActive
                   ? 'bg-indigo-500/10 text-indigo-400'
                   : 'text-white/60 hover:bg-white/[0.04] hover:text-white'

@@ -7,13 +7,15 @@ export async function proxy(request: NextRequest) {
   // Protect API routes
   if (
     request.nextUrl.pathname.startsWith('/api/chat') ||
-    request.nextUrl.pathname.startsWith('/api/ingest')
+    request.nextUrl.pathname.startsWith('/api/ingest') ||
+    request.nextUrl.pathname.startsWith('/api/admin/ingestion') ||
+    request.nextUrl.pathname.startsWith('/api/admin/documents')
   ) {
     const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) {
       return new NextResponse(
-        JSON.stringify({ error: 'Unauthorized', code: 'UNAUTHORIZED' }),
+        JSON.stringify({ error: 'Unauthorized', code: 'Please Log In' }),
         { status: 401, headers: { 'content-type': 'application/json' } }
       )
     }
