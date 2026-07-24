@@ -7,7 +7,8 @@
  * Uses Vercel AI SDK v7's useChat() hook for streaming communication
  * with the /api/chat endpoint.
  * 
- * Now optimized for a side-drawer layout with a compact empty state.
+ * Now optimized for a side-drawer layout with a compact empty state
+ * and supports session continuation via initialMessages prop.
  */
 
 import { useChat } from '@ai-sdk/react';
@@ -18,24 +19,14 @@ import ChatInput from './ChatInput';
 import TypingIndicator from '@/components/ui/TypingIndicator';
 import RetrievalIndicator from '@/components/ui/RetrievalIndicator';
 import { SUGGESTED_QUERIES } from '@/config/constants';
-import { MessageSquarePlus } from 'lucide-react';
+import { MessageSquarePlus, History } from 'lucide-react';
 import Image from 'next/image';
 
-/**
- * Generates or retrieves a persistent session ID from localStorage.
- */
-function getSessionId(): string {
-  if (typeof window === 'undefined') return 'server';
-
-  const key = 'ecrs-session-id';
-  let sessionId = localStorage.getItem(key);
-
-  if (!sessionId) {
-    sessionId = crypto.randomUUID();
-    localStorage.setItem(key, sessionId);
-  }
-
-  return sessionId;
+interface ChatInterfaceProps {
+  sessionId: string;
+  initialMessages?: any[];
+  onToggleSidebar?: () => void;
+  onNewChat?: () => void;
 }
 
 /**
@@ -54,13 +45,19 @@ function getMessageText(message: { content?: string; parts?: Array<{ type: strin
     .join('');
 }
 
-export default function ChatInterface() {
-  const [sessionId] = useState(() => getSessionId());
-
+export default function ChatInterface({ sessionId, initialMessages = [], onToggleSidebar, onNewChat }: ChatInterfaceProps) {
   const { messages, sendMessage, status, error, setMessages } = useChat({
     id: sessionId,
     transport: new TextStreamChatTransport({ api: '/api/chat' }),
   });
+
+  useEffect(() => {
+    if (initialMessages && initialMessages.length > 0) {
+      setMessages(initialMessages);
+    } else {
+      setMessages([]);
+    }
+  }, [sessionId, initialMessages, setMessages]);
 
   const [inputValue, setInputValue] = useState('');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -97,16 +94,29 @@ export default function ChatInterface() {
   );
 
   const handleClearChat = useCallback(() => {
-    setMessages([]);
-  }, [setMessages]);
+    if (onNewChat) {
+      onNewChat();
+    } else {
+      setMessages([]);
+    }
+  }, [onNewChat, setMessages]);
 
   const hasMessages = messages.length > 0;
 
   return (
     <div className="flex h-full flex-col bg-black/40">
       {/* Drawer Header (Internal) */}
-      <div className="flex items-center justify-between border-b border-white/[0.06] bg-black/20 px-6 py-4 backdrop-blur-md">
+      <div className="flex items-center justify-between border-b border-white/[0.06] bg-black/20 px-6 py-4 backdrop-blur-sm">
         <div className="flex items-center gap-2">
+          {onToggleSidebar && (
+            <button
+              onClick={onToggleSidebar}
+              className="mr-2 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/[0.05] hover:text-white"
+              title="Toggle History Sidebar"
+            >
+              <History className="h-4 w-4" />
+            </button>
+          )}
           <Image
             src="/logo.jpg"
             alt="CartContext Logo"
@@ -116,15 +126,13 @@ export default function ChatInterface() {
           />
           <h3 className="text-sm font-semibold text-white">AI Assistant</h3>
         </div>
-        {hasMessages && (
-          <button
-            onClick={handleClearChat}
-            className="rounded-lg p-1.5 text-white/40 transition-colors hover:bg-white/[0.05] hover:text-white"
-            title="New Chat"
-          >
-            <MessageSquarePlus className="h-4 w-4" />
-          </button>
-        )}
+        <button
+          onClick={handleClearChat}
+          className="rounded-lg p-1.5 text-white/40 transition-colors hover:bg-white/[0.05] hover:text-white"
+          title="New Chat"
+        >
+          <MessageSquarePlus className="h-4 w-4" />
+        </button>
       </div>
 
       {/* Messages Area */}

@@ -142,3 +142,29 @@ export async function searchDocumentChunks(
     throw new DatabaseError(`Document vector search failed: ${err.message}`, err);
   }
 }
+
+/**
+ * Deletes document chunks associated with specific filenames.
+ * Used for cleanup of incomplete or failed ingestion jobs.
+ * 
+ * @param filenames - Array of original filenames to match against `metadata.filename`
+ */
+export async function deleteDocumentsByFilenames(filenames: string[]): Promise<void> {
+  if (!filenames.length) return;
+  try {
+    const db = await getDatabase();
+    const collection = db.collection<UnifiedNode>(UNIFIED_NODES_COLLECTION);
+    
+    log.info('Deleting documents by filenames', { count: filenames.length });
+    const result = await collection.deleteMany({ 
+      type: 'document',
+      'metadata.filename': { $in: filenames } 
+    });
+    
+    log.debug('Documents deleted successfully', { deletedCount: result.deletedCount });
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    log.error('Failed to delete documents by filenames', { error: err.message });
+    throw new DatabaseError(`Failed to delete documents: ${err.message}`, err);
+  }
+}

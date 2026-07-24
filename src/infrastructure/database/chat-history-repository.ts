@@ -97,3 +97,39 @@ export async function getMessageCount(sessionId: string): Promise<number> {
     return 0;
   }
 }
+
+/**
+ * Retrieves a list of unique chat sessions grouped by sessionId,
+ * including the most recent message timestamp and a content preview.
+ * 
+ * @returns Array of chat sessions sorted by most recent activity
+ */
+export async function getSessions(): Promise<{ sessionId: string; lastUpdated: Date; preview: string }[]> {
+  try {
+    const db = await getDatabase();
+    const collection = db.collection<ChatHistoryMessage>(CHAT_HISTORY_COLLECTION);
+    
+    const sessions = await collection.aggregate([
+      // Sort first so that $first within $group grabs the most recent message
+      { $sort: { timestamp: -1 } },
+      { 
+        $group: { 
+          _id: "$sessionId", 
+          lastUpdated: { $first: "$timestamp" }, 
+          preview: { $first: "$content" } 
+        } 
+      },
+      { $sort: { lastUpdated: -1 } }
+    ]).toArray();
+    
+    return sessions.map(s => ({
+      sessionId: s._id,
+      lastUpdated: s.lastUpdated,
+      preview: s.preview
+    }));
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    log.error('Failed to fetch chat sessions', { error: err.message });
+    throw new DatabaseError(`Failed to fetch chat sessions: ${err.message}`, err);
+  }
+}

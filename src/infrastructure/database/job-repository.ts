@@ -108,3 +108,56 @@ export async function getJobsByIds(jobIds: string[]): Promise<IngestionJob[]> {
     throw new DatabaseError(`Failed to fetch jobs: ${err.message}`, err);
   }
 }
+
+/**
+ * Retrieves all jobs, ordered by creation date descending.
+ * Used for the Admin Ingestion Dashboard.
+ */
+export async function getAllJobs(): Promise<IngestionJob[]> {
+  try {
+    const db = await getDatabase();
+    const collection = db.collection<IngestionJob>(INGESTION_JOBS_COLLECTION);
+    return await collection.find({}).sort({ createdAt: -1 }).toArray();
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    log.error('Failed to fetch all jobs', { error: err.message });
+    throw new DatabaseError(`Failed to fetch all jobs: ${err.message}`, err);
+  }
+}
+
+/**
+ * Retrieves all jobs that are not in the 'completed' state.
+ * Used for the cleanup job dashboard.
+ */
+export async function getIncompleteJobs(): Promise<IngestionJob[]> {
+  try {
+    const db = await getDatabase();
+    const collection = db.collection<IngestionJob>(INGESTION_JOBS_COLLECTION);
+    return await collection.find({ status: { $ne: 'completed' } }).toArray();
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    log.error('Failed to fetch incomplete jobs', { error: err.message });
+    throw new DatabaseError(`Failed to fetch incomplete jobs: ${err.message}`, err);
+  }
+}
+
+/**
+ * Deletes multiple jobs by their IDs.
+ * 
+ * @param jobIds - Array of job IDs to delete
+ */
+export async function deleteJobs(jobIds: string[]): Promise<void> {
+  if (!jobIds.length) return;
+  try {
+    const db = await getDatabase();
+    const collection = db.collection<IngestionJob>(INGESTION_JOBS_COLLECTION);
+    
+    log.info('Deleting jobs', { count: jobIds.length });
+    await collection.deleteMany({ _id: { $in: jobIds } });
+    log.debug('Jobs deleted successfully', { count: jobIds.length });
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    log.error('Failed to delete jobs', { error: err.message });
+    throw new DatabaseError(`Failed to delete jobs: ${err.message}`, err);
+  }
+}

@@ -5,7 +5,7 @@ import { Database, FileText, Settings, LayoutDashboard } from 'lucide-react';
 
 const navItems = [
   { name: 'Dashboard', href: '/admin', icon: LayoutDashboard },
-  { name: 'Data Ingestion', href: '/admin/ingest', icon: Database },
+  { name: 'Data Ingestion', href: '/admin/ingestion', icon: Database },
   { name: 'Documents', href: '/admin/docs', icon: FileText },
   { name: 'Settings', href: '/admin/settings', icon: Settings },
 ];
