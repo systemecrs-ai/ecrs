@@ -18,38 +18,38 @@ import { createLogger } from '@/lib/logger';
 const log = createLogger('MemoryService');
 
 /**
- * Checks the message count for a session and dispatches a memory
+ * Checks the message count for a user and dispatches a memory
  * summarization job if the threshold is met.
  * 
  * Triggers every MEMORY_TRIGGER_INTERVAL messages (default: 5).
  * 
- * @param sessionId - The client session identifier
+ * @param userId - The Supabase-verified user ID
  */
 export async function maybeDispatchMemorySummarization(
-  sessionId: string
+  userId: string
 ): Promise<void> {
   try {
-    const count = await getMessageCount(sessionId);
+    const count = await getMessageCount(userId);
 
     // Trigger on multiples of the interval (5, 10, 15, ...)
     if (count > 0 && count % MEMORY_TRIGGER_INTERVAL === 0) {
-      log.info('Dispatching memory summarization', { sessionId, messageCount: count });
+      log.info('Dispatching memory summarization', { userId, messageCount: count });
 
       await inngest.send({
         name: 'memory/summarize.requested',
         data: {
-          sessionId,
+          userId,
           messageCount: count,
         },
       });
 
-      log.info('Memory summarization dispatched', { sessionId });
+      log.info('Memory summarization dispatched', { userId });
     }
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
     // Non-critical — don't throw, just log
     log.error('Failed to dispatch memory summarization', {
-      sessionId,
+      userId,
       error: err.message,
     });
   }
@@ -59,31 +59,31 @@ export async function maybeDispatchMemorySummarization(
  * Retrieves the user's memory context for the RAG pipeline.
  * 
  * Performs a vector search on the user_memory_vectors collection
- * filtered by sessionId, and returns the combined summary text.
+ * filtered by userId, and returns the combined summary text.
  * 
- * @param sessionId - The client session identifier
+ * @param userId - The Supabase-verified user ID
  * @param queryEmbedding - The query embedding for relevance matching
  * @returns Combined memory summary or null if no memory exists
  */
 export async function retrieveUserMemory(
-  sessionId: string,
+  userId: string,
   queryEmbedding: number[]
 ): Promise<string | null> {
   try {
-    const results = await searchUserMemory(sessionId, queryEmbedding);
+    const results = await searchUserMemory(userId, queryEmbedding);
 
     if (results.length === 0) {
-      log.debug('No user memory found', { sessionId });
+      log.debug('No user memory found', { userId });
       return null;
     }
 
-    // Combine all memory summaries (usually just one per session)
+    // Combine all memory summaries (usually just one per user)
     const combined = results
       .map(r => r.summary)
       .join('\n\n');
 
     log.info('User memory retrieved', {
-      sessionId,
+      userId,
       resultCount: results.length,
       summaryLength: combined.length,
     });
@@ -92,7 +92,7 @@ export async function retrieveUserMemory(
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
     log.error('Failed to retrieve user memory', {
-      sessionId,
+      userId,
       error: err.message,
     });
     // Non-critical — return null on failure

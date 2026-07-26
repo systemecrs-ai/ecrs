@@ -4,13 +4,21 @@
  * POST /api/chat — Accepts user messages, runs the triple-retrieval
  * RAG pipeline, and returns a streaming text response via Vercel AI SDK v7.
  * 
- * Now accepts sessionId for long-term memory tracking and
- * persists messages to chat history for the memory worker.
+ * Includes a Semantic Interception Cache (MongoDB Atlas Vector Search)
+ * that bypasses the heavy LLM for repetitive queries with ≥95%
+ * cosine similarity.
+ * 
+ * Authenticates users via Supabase, extracts threadId for
+ * conversation isolation, and persists messages to chat history.
  * 
  * @module app/api/chat/route
  */
 
+import { simulateReadableStream } from 'ai';
 import { executeRAGPipeline } from '@/core/rag-pipeline';
+import { runWithContext } from '@/lib/request-context';
+import { getEmbedding } from '@/infrastructure/nvidia/nvidia-client';
+import { checkCache, saveToCache } from '@/infrastructure/database/cache-repository';
 
 import { ValidationError, AppError } from '@/lib/errors';
 import { createLogger } from '@/lib/logger';
@@ -21,7 +29,7 @@ const log = createLogger('ChatRoute');
  * Handles POST requests to /api/chat.
  * 
  * The request body follows the Vercel AI SDK v7 transport protocol,
- * containing a messages array with UIMessage objects and an optional sessionId.
+ * containing a messages array with UIMessage objects and a threadId.
  * 
  * Returns a streaming response using Vercel AI SDK's UI message stream protocol.
  */
@@ -34,12 +42,17 @@ export async function POST(req: Request): Promise<Response> {
       throw new ValidationError('Request must include a non-empty "messages" array.');
     }
 
-    // Extract sessionId cleanly from the verified header set by middleware
-    const sessionId = req.headers.get('x-user-id');
+    // ── Authenticate — extract verified userId from middleware header ─────
+    const userId = req.headers.get('x-user-id');
 
-    if (!sessionId) {
+    if (!userId) {
       throw new AppError('Unauthorized access to chat API.', 'UNAUTHORIZED', 401);
     }
+
+    // ── Extract threadId from request body ────────────────────────────────
+    const threadId = typeof body.threadId === 'string' && body.threadId.trim()
+      ? body.threadId.trim()
+      : 'default';
 
     // Extract the latest user message from the v7 UIMessage format
     const messages = body.messages;
@@ -86,12 +99,84 @@ export async function POST(req: Request): Promise<Response> {
     log.info('Chat request received', {
       query: userQuery.slice(0, 100),
       historyLength: chatHistory.length,
-      hasSession: !!sessionId,
+      userId,
+      threadId,
     });
 
-    // ── Execute RAG Pipeline (Triple-Retrieval) ──────────────────────────
-    const { stream } = await executeRAGPipeline(userQuery, chatHistory, sessionId);
+    // ── Step A: Embed Query for Semantic Cache ───────────────────────────
+    // Uses the same NvidiaClient embedding function as the RAG pipeline.
+    // This embedding is used for cache lookup; the pipeline generates
+    // its own embedding independently (preserving its internal flow).
+    let queryEmbedding: number[] | null = null;
+    try {
+      queryEmbedding = await getEmbedding(userQuery, 'query');
+      log.debug('Query embedded for semantic cache', {
+        dimensions: queryEmbedding.length,
+      });
+    } catch (error) {
+      // Embedding failure for cache should not block the pipeline
+      log.warn('Semantic cache embedding failed, skipping cache', {
+        error: (error as Error).message,
+      });
+    }
 
+    // ── Step B: Check Semantic Cache ─────────────────────────────────────
+    if (queryEmbedding) {
+      const cacheResult = await checkCache(queryEmbedding);
+
+      // ── Step C: Cache Hit — return simulated stream immediately ────────
+      if (cacheResult.hit) {
+        log.info('Semantic cache HIT — bypassing RAG pipeline', {
+          score: cacheResult.score.toFixed(4),
+          answerLength: cacheResult.answer.length,
+        });
+
+        // Split cached answer into word-boundary chunks for a natural
+        // streaming feel that matches the live LLM output cadence.
+        const chunks = cacheResult.answer.split(/(\s+)/);
+        const simulatedStream = simulateReadableStream({
+          chunks,
+          initialDelayInMs: 0,
+          chunkDelayInMs: 15,
+        });
+
+        return new Response(simulatedStream, {
+          status: 200,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        });
+      }
+
+      log.debug('Semantic cache MISS — proceeding with RAG pipeline');
+    }
+
+    // ── Step D: Cache Miss — Execute RAG Pipeline (Triple-Retrieval) ─────
+    // Wrap in request context so that downstream appendMessage calls
+    // in the RAG pipeline automatically receive userId + threadId.
+    // The pipeline receives userId as its user identity parameter
+    // (memory retrieval is user-scoped, not thread-scoped).
+    const { stream } = await runWithContext(
+      { userId, threadId },
+      () => executeRAGPipeline(userQuery, chatHistory, userId)
+    );
+
+    // ── Async Write: Save to Semantic Cache (non-blocking) ──────────────
+    // After the stream completes, save the query + embedding + answer to
+    // MongoDB. Uses a detached promise chain — does not delay the response.
+    if (queryEmbedding) {
+      const capturedEmbedding = queryEmbedding;
+      const capturedQuery = userQuery;
+      Promise.resolve(stream.text)
+        .then((fullText: string) => {
+          if (fullText) {
+            return saveToCache(capturedQuery, capturedEmbedding, fullText);
+          }
+        })
+        .catch((err: Error) => {
+          log.error('Semantic cache async write failed', {
+            error: err.message,
+          });
+        });
+    }
 
     // ── Return Streaming Response ────────────────────────────────────────
     return stream.toTextStreamResponse();

@@ -10,17 +10,17 @@ import ProductCanvas from '@/components/ui/ProductCanvas';
 import { Analytics } from "@vercel/analytics/next"
 
 /**
- * Generates or retrieves a persistent session ID from localStorage.
+ * Generates or retrieves a persistent thread ID from localStorage.
  */
-function getLocalSessionId(): string {
+function getLocalThreadId(): string {
   if (typeof window === 'undefined') return 'server';
-  const key = 'ecrs-session-id';
-  let sessionId = localStorage.getItem(key);
-  if (!sessionId) {
-    sessionId = crypto.randomUUID();
-    localStorage.setItem(key, sessionId);
+  const key = 'ecrs-thread-id';
+  let threadId = localStorage.getItem(key);
+  if (!threadId) {
+    threadId = crypto.randomUUID();
+    localStorage.setItem(key, threadId);
   }
-  return sessionId;
+  return threadId;
 }
 
 /**
@@ -32,33 +32,33 @@ function getLocalSessionId(): string {
 export default function Home() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [currentSessionId, setCurrentSessionId] = useState<string>('');
+  const [currentThreadId, setCurrentThreadId] = useState<string>('');
   const [initialMessages, setInitialMessages] = useState<any[]>([]);
 
   useEffect(() => {
-    setCurrentSessionId(getLocalSessionId());
+    setCurrentThreadId(getLocalThreadId());
   }, []);
 
-  const handleSelectSession = async (sessionId: string) => {
-    setCurrentSessionId(sessionId);
-    localStorage.setItem('ecrs-session-id', sessionId);
+  const handleSelectThread = async (threadId: string) => {
+    setCurrentThreadId(threadId);
+    localStorage.setItem('ecrs-thread-id', threadId);
     
-    // Fetch initial messages for this session
+    // Fetch initial messages for this thread
     try {
-      const res = await fetch(`/api/chat/history/${sessionId}`);
+      const res = await fetch(`/api/chat/history/${threadId}`);
       const data = await res.json();
       if (data.messages) {
         setInitialMessages(data.messages);
       }
     } catch (error) {
-      console.error('Failed to fetch session messages', error);
+      console.error('Failed to fetch thread messages', error);
     }
   };
 
   const handleNewChat = () => {
-    const newSessionId = crypto.randomUUID();
-    setCurrentSessionId(newSessionId);
-    localStorage.setItem('ecrs-session-id', newSessionId);
+    const newThreadId = crypto.randomUUID();
+    setCurrentThreadId(newThreadId);
+    localStorage.setItem('ecrs-thread-id', newThreadId);
     setInitialMessages([]);
   };
 
@@ -74,9 +74,9 @@ export default function Home() {
           <ChatSidebar 
             isOpen={isSidebarOpen}
             onClose={() => setIsSidebarOpen(false)}
-            onSelectSession={handleSelectSession}
+            onSelectThread={handleSelectThread}
             onNewChat={handleNewChat}
-            currentSessionId={currentSessionId}
+            currentThreadId={currentThreadId}
           />
 
           {/* Main Product Canvas */}
@@ -98,10 +98,10 @@ export default function Home() {
                 transition={{ type: 'spring', damping: 25, stiffness: 200 }}
                 className="fixed right-0 top-16 z-40 h-[calc(100vh-64px)] w-full max-w-[400px] border-l border-white/[0.08] bg-black/60 shadow-2xl backdrop-blur-2xl sm:w-[400px]"
               >
-                {currentSessionId && (
+                {currentThreadId && (
                   <ChatInterface 
-                    key={currentSessionId} 
-                    sessionId={currentSessionId} 
+                    key={currentThreadId} 
+                    threadId={currentThreadId} 
                     initialMessages={initialMessages} 
                     onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
                     onNewChat={handleNewChat}

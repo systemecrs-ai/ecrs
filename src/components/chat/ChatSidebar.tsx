@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, X, Clock, Loader2, PlusCircle } from 'lucide-react';
 
-export interface ChatSession {
-  sessionId: string;
+export interface ChatThread {
+  threadId: string;
   lastUpdated: string; // ISO date string
   preview: string;
 }
@@ -13,37 +13,37 @@ export interface ChatSession {
 interface ChatSidebarProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelectSession: (sessionId: string) => void;
+  onSelectThread: (threadId: string) => void;
   onNewChat: () => void;
-  currentSessionId?: string;
+  currentThreadId?: string;
 }
 
-export default function ChatSidebar({ isOpen, onClose, onSelectSession, onNewChat, currentSessionId }: ChatSidebarProps) {
-  const [sessions, setSessions] = useState<ChatSession[]>([]);
+export default function ChatSidebar({ isOpen, onClose, onSelectThread, onNewChat, currentThreadId }: ChatSidebarProps) {
+  const [threads, setThreads] = useState<ChatThread[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (isOpen) {
-      fetchSessions();
+      fetchThreads();
     }
   }, [isOpen]);
 
-  const fetchSessions = async () => {
+  const fetchThreads = async () => {
     setIsLoading(true);
     try {
       const res = await fetch('/api/chat/history');
       const data = await res.json();
-      if (data.sessions) {
-        setSessions(data.sessions);
+      if (data.threads) {
+        setThreads(data.threads);
       }
     } catch (error) {
-      console.error('Failed to fetch sessions', error);
+      console.error('Failed to fetch threads', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const groupSessionsByDate = (sessions: ChatSession[]) => {
+  const groupThreadsByDate = (threads: ChatThread[]) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const yesterday = new Date(today);
@@ -51,27 +51,27 @@ export default function ChatSidebar({ isOpen, onClose, onSelectSession, onNewCha
     const sevenDaysAgo = new Date(today);
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    const grouped: Record<string, ChatSession[]> = {
+    const grouped: Record<string, ChatThread[]> = {
       'Today': [],
       'Previous 7 Days': [],
       'Older': []
     };
 
-    sessions.forEach(session => {
-      const sessionDate = new Date(session.lastUpdated);
-      if (sessionDate >= today) {
-        grouped['Today'].push(session);
-      } else if (sessionDate >= sevenDaysAgo) {
-        grouped['Previous 7 Days'].push(session);
+    threads.forEach(thread => {
+      const threadDate = new Date(thread.lastUpdated);
+      if (threadDate >= today) {
+        grouped['Today'].push(thread);
+      } else if (threadDate >= sevenDaysAgo) {
+        grouped['Previous 7 Days'].push(thread);
       } else {
-        grouped['Older'].push(session);
+        grouped['Older'].push(thread);
       }
     });
 
     return grouped;
   };
 
-  const groupedSessions = groupSessionsByDate(sessions);
+  const groupedThreads = groupThreadsByDate(threads);
 
   return (
     <AnimatePresence>
@@ -124,27 +124,27 @@ export default function ChatSidebar({ isOpen, onClose, onSelectSession, onNewCha
                     </div>
                   ))}
                 </div>
-              ) : sessions.length === 0 ? (
+              ) : threads.length === 0 ? (
                 <div className="text-center text-slate-500 text-sm pt-8">
                   No previous chats found.
                 </div>
               ) : (
-                Object.entries(groupedSessions).map(([group, groupSessions]) => {
-                  if (groupSessions.length === 0) return null;
+                Object.entries(groupedThreads).map(([group, groupThreads]) => {
+                  if (groupThreads.length === 0) return null;
                   return (
                     <div key={group} className="space-y-1">
                       <h3 className="px-2 text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
                         {group}
                       </h3>
-                      {groupSessions.map((session) => (
+                      {groupThreads.map((thread) => (
                         <button
-                          key={session.sessionId}
+                          key={thread.threadId}
                           onClick={() => {
-                            onSelectSession(session.sessionId);
+                            onSelectThread(thread.threadId);
                             onClose();
                           }}
                           className={`w-full flex items-start gap-3 px-2 py-2 rounded-lg text-left transition-colors ${
-                            currentSessionId === session.sessionId
+                            currentThreadId === thread.threadId
                               ? 'bg-white/10 text-white'
                               : 'text-slate-400 hover:bg-white/[0.05] hover:text-slate-200'
                           }`}
@@ -152,7 +152,7 @@ export default function ChatSidebar({ isOpen, onClose, onSelectSession, onNewCha
                           <MessageSquare className="w-4 h-4 mt-0.5 shrink-0 opacity-50" />
                           <div className="flex-1 min-w-0">
                             <p className="text-sm truncate">
-                              {session.preview || 'New Conversation'}
+                              {thread.preview || 'New Conversation'}
                             </p>
                           </div>
                         </button>

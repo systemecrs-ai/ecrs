@@ -55,7 +55,7 @@ export interface RAGPipelineResult {
  * 
  * @param userQuery - The user's latest message/query
  * @param chatHistory - Previous conversation messages for context
- * @param sessionId - Client session ID for memory tracking (optional)
+ * @param userId - Supabase-verified user ID for memory tracking (optional)
  * @returns RAGPipelineResult for streaming back to the client
  * 
  * @throws {EmbeddingError} If embedding generation fails
@@ -64,13 +64,13 @@ export interface RAGPipelineResult {
 export async function executeRAGPipeline(
   userQuery: string,
   chatHistory: Message[] = [],
-  sessionId?: string
+  userId?: string
 ): Promise<RAGPipelineResult> {
   const startTime = Date.now();
   log.info('Starting RAG pipeline (triple-retrieval)', {
     query: userQuery,
     historyLength: chatHistory.length,
-    hasSession: !!sessionId,
+    hasUser: !!userId,
   });
 
   // ── Stage 1: Embed ──────────────────────────────────────────────────────
@@ -104,9 +104,9 @@ export async function executeRAGPipeline(
       return [] as DocumentSearchResult[];
     }),
 
-    // Search 3: User Memory (only if sessionId provided)
-    sessionId
-      ? retrieveUserMemory(sessionId, queryEmbedding)
+    // Search 3: User Memory (only if userId provided)
+    userId
+      ? retrieveUserMemory(userId, queryEmbedding)
       : Promise.resolve(null),
   ]);
 
@@ -208,9 +208,9 @@ export async function executeRAGPipeline(
   });
 
   // ── Stage 5: Background — Persist & Memory (non-blocking) ──────────────
-  if (sessionId) {
+  if (userId) {
     // Fire and forget — don't block the response
-    persistAndTriggerMemory(sessionId, userQuery, result).catch(err => {
+    persistAndTriggerMemory(userId, userQuery, result).catch(err => {
       log.error('Background persist/memory failed', { error: (err as Error).message });
     });
   }
@@ -218,7 +218,7 @@ export async function executeRAGPipeline(
   return { stream: result, context: ragContext };
 }
 
-// ─── Background Persistence ─────────────────────────────────────────────────
+// ─── Background Persistence ───────────────────────────────────────────────────────
 
 /**
  * Persists the user message and assistant response to chat history,
@@ -226,28 +226,28 @@ export async function executeRAGPipeline(
  * Runs in the background after response streaming begins.
  */
 async function persistAndTriggerMemory(
-  sessionId: string,
+  userId: string,
   userQuery: string,
   streamResult: Awaited<ReturnType<typeof streamText>>
 ): Promise<void> {
   // Persist user message immediately
-  await appendMessage(sessionId, 'user', userQuery);
+  await appendMessage(userId, 'user', userQuery);
 
   // Wait for full response text, then persist
   try {
     const fullText = await streamResult.text;
     if (fullText) {
-      await appendMessage(sessionId, 'assistant', fullText);
+      await appendMessage(userId, 'assistant', fullText);
     }
   } catch (error) {
     log.error('Failed to persist assistant message', {
-      sessionId,
+      userId,
       error: (error as Error).message,
     });
   }
 
   // Check if memory summarization should be triggered
-  await maybeDispatchMemorySummarization(sessionId);
+  await maybeDispatchMemorySummarization(userId);
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

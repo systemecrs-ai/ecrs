@@ -93,10 +93,10 @@ export interface DocumentSearchResult {
 // ─── User Memory Types ──────────────────────────────────────────────────────
 
 /**
- * User memory summary retrieved for the current session.
+ * User memory summary retrieved for the current user.
  */
 export interface UserMemory {
-  sessionId: string;
+  userId: string;
   summary: string;
   lastUpdated: Date;
 }
@@ -131,8 +131,8 @@ export interface RAGContext {
 export interface ChatRequest {
   /** Array of conversation messages (user + assistant history) */
   messages: Message[];
-  /** Client session identifier for memory/history tracking */
-  sessionId?: string;
+  /** Per-conversation thread UUID for session isolation */
+  threadId?: string;
 }
 
 /**

@@ -23,7 +23,7 @@ import { MessageSquarePlus, History } from 'lucide-react';
 import Image from 'next/image';
 
 interface ChatInterfaceProps {
-  sessionId: string;
+  threadId: string;
   initialMessages?: any[];
   onToggleSidebar?: () => void;
   onNewChat?: () => void;
@@ -45,9 +45,9 @@ function getMessageText(message: { content?: string; parts?: Array<{ type: strin
     .join('');
 }
 
-export default function ChatInterface({ sessionId, initialMessages = [], onToggleSidebar, onNewChat }: ChatInterfaceProps) {
+export default function ChatInterface({ threadId, initialMessages = [], onToggleSidebar, onNewChat }: ChatInterfaceProps) {
   const { messages, sendMessage, status, error, setMessages } = useChat({
-    id: sessionId,
+    id: threadId,
     transport: new TextStreamChatTransport({ api: '/api/chat' }),
   });
 
@@ -57,7 +57,7 @@ export default function ChatInterface({ sessionId, initialMessages = [], onToggl
     } else {
       setMessages([]);
     }
-  }, [sessionId, initialMessages, setMessages]);
+  }, [threadId, initialMessages, setMessages]);
 
   const [inputValue, setInputValue] = useState('');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -78,19 +78,19 @@ export default function ChatInterface({ sessionId, initialMessages = [], onToggl
       e.preventDefault();
       const trimmed = inputValue.trim();
       if (!trimmed || isLoading) return;
-      sendMessage({ text: trimmed }, { body: { sessionId } });
+      sendMessage({ text: trimmed }, { body: { threadId } });
       setInputValue('');
     },
-    [inputValue, isLoading, sendMessage, sessionId]
+    [inputValue, isLoading, sendMessage, threadId]
   );
 
   // Handle suggestion chip click
   const handleSuggestionClick = useCallback(
     (query: string) => {
       if (isLoading) return;
-      sendMessage({ text: query }, { body: { sessionId } });
+      sendMessage({ text: query }, { body: { threadId } });
     },
-    [isLoading, sendMessage, sessionId]
+    [isLoading, sendMessage, threadId]
   );
 
   const handleClearChat = useCallback(() => {

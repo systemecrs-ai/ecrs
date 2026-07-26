@@ -26,15 +26,15 @@ const log = createLogger('MemoryRepository');
 
 /**
  * Upserts a user memory summary into the database.
- * If a memory for this session already exists, it is replaced.
+ * If a memory for this user already exists, it is replaced.
  * 
- * @param sessionId - The client session identifier
+ * @param userId - The Supabase-verified user ID
  * @param summary - Natural language summary of user traits
  * @param embedding - Vectorized embedding of the summary
  * @param messageCount - Number of messages analyzed
  */
 export async function upsertUserMemory(
-  sessionId: string,
+  userId: string,
   summary: string,
   embedding: number[],
   messageCount: number
@@ -43,10 +43,10 @@ export async function upsertUserMemory(
     const db = await getDatabase();
     const collection = db.collection<UnifiedNode>(UNIFIED_NODES_COLLECTION);
 
-    log.info('Upserting user memory', { sessionId, summaryLength: summary.length });
+    log.info('Upserting user memory', { userId, summaryLength: summary.length });
 
     await collection.updateOne(
-      { sessionId, type: 'memory' },
+      { userId, type: 'memory' },
       {
         $set: {
           summary,
@@ -61,25 +61,25 @@ export async function upsertUserMemory(
       { upsert: true }
     );
 
-    log.info('User memory upserted successfully', { sessionId });
+    log.info('User memory upserted successfully', { userId });
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
-    log.error('Failed to upsert user memory', { sessionId, error: err.message });
+    log.error('Failed to upsert user memory', { userId, error: err.message });
     throw new DatabaseError(`Failed to upsert user memory: ${err.message}`, err);
   }
 }
 
 /**
  * Performs a vector similarity search on user memory.
- * Filters by sessionId to only retrieve memories for the current user.
+ * Filters by userId to only retrieve memories for the current user.
  * 
- * @param sessionId - The client session identifier
+ * @param userId - The Supabase-verified user ID
  * @param queryEmbedding - The query embedding vector
  * @param limit - Maximum number of results
  * @returns Array of matching memory documents
  */
 export async function searchUserMemory(
-  sessionId: string,
+  userId: string,
   queryEmbedding: number[],
   limit: number = MEMORY_SEARCH_LIMIT
 ): Promise<UserMemory[]> {
@@ -87,7 +87,7 @@ export async function searchUserMemory(
     const db = await getDatabase();
     const collection = db.collection<UnifiedNode>(UNIFIED_NODES_COLLECTION);
 
-    log.info('Searching user memory', { sessionId, limit });
+    log.info('Searching user memory', { userId, limit });
 
     const pipeline: Document[] = [
       {
@@ -97,13 +97,13 @@ export async function searchUserMemory(
           queryVector: queryEmbedding,
           numCandidates: VECTOR_NUM_CANDIDATES,
           limit,
-          filter: { sessionId, type: 'memory' },
+          filter: { userId, type: 'memory' },
         },
       },
       {
         $project: {
           _id: 1,
-          sessionId: 1,
+          userId: 1,
           summary: 1,
           lastUpdated: 1,
           score: { $meta: 'vectorSearchScore' },
@@ -114,13 +114,13 @@ export async function searchUserMemory(
     const results = await collection.aggregate<any>(pipeline).toArray();
 
     const mappedResults: UserMemory[] = results.map(doc => ({
-      sessionId: doc.sessionId,
+      userId: doc.userId,
       summary: doc.summary,
       lastUpdated: doc.lastUpdated,
     }));
 
     log.info('User memory search completed', {
-      sessionId,
+      userId,
       resultCount: mappedResults.length,
       topScore: results[0]?.score ?? 0,
     });
@@ -128,35 +128,35 @@ export async function searchUserMemory(
     return mappedResults;
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
-    log.error('User memory search failed', { sessionId, error: err.message });
+    log.error('User memory search failed', { userId, error: err.message });
     // Gracefully return empty — memory is non-critical
     return [];
   }
 }
 
 /**
- * Retrieves user memory by session ID (non-vector, exact match).
+ * Retrieves user memory by user ID (non-vector, exact match).
  * Used by the memory worker to check if memory already exists.
  * 
- * @param sessionId - The client session identifier
+ * @param userId - The Supabase-verified user ID
  * @returns The memory document or null
  */
-export async function getUserMemoryBySession(
-  sessionId: string
+export async function getUserMemoryByUser(
+  userId: string
 ): Promise<UserMemory | null> {
   try {
     const db = await getDatabase();
     const collection = db.collection<UnifiedNode>(UNIFIED_NODES_COLLECTION);
-    const doc = await collection.findOne({ sessionId, type: 'memory' }) as MemoryNode | null;
+    const doc = await collection.findOne({ userId, type: 'memory' }) as MemoryNode | null;
     if (!doc) return null;
     return {
-      sessionId: doc.sessionId,
+      userId: doc.userId,
       summary: doc.summary,
       lastUpdated: doc.lastUpdated,
     };
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
-    log.error('Failed to fetch user memory', { sessionId, error: err.message });
+    log.error('Failed to fetch user memory', { userId, error: err.message });
     return null;
   }
 }

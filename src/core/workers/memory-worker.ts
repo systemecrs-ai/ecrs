@@ -11,8 +11,8 @@
  */
 
 import { inngest } from '@/infrastructure/queue/inngest-client';
-import { getRecentMessages } from '@/infrastructure/database/chat-history-repository';
-import { upsertUserMemory, getUserMemoryBySession } from '@/infrastructure/database/memory-repository';
+import { getRecentMessagesByUser } from '@/infrastructure/database/chat-history-repository';
+import { upsertUserMemory, getUserMemoryByUser } from '@/infrastructure/database/memory-repository';
 import { getEmbedding } from '@/infrastructure/nvidia/nvidia-client';
 import { getNvidiaApiKey, getNvidiaBaseUrl, getNvidiaSummarizationModel } from '@/config/env';
 import { createLogger } from '@/lib/logger';
@@ -29,15 +29,15 @@ export const memorySummarizeFunction = inngest.createFunction(
     triggers: [{ event: 'memory/summarize.requested' }],
   },
   async ({ event, step }) => {
-    const { sessionId, messageCount } = event.data;
+    const { userId, messageCount } = event.data;
 
-    log.info('Memory summarization started', { sessionId, messageCount });
+    log.info('Memory summarization started', { userId, messageCount });
 
     // ── Step 1: Fetch Chat History ────────────────────────────────────────
     const history = await step.run('fetch-history', async () => {
-      const messages = await getRecentMessages(sessionId, 30);
+      const messages = await getRecentMessagesByUser(userId, 30);
       log.info('Chat history fetched', {
-        sessionId,
+        userId,
         messageCount: messages.length,
       });
       return messages.map(m => ({
@@ -47,19 +47,19 @@ export const memorySummarizeFunction = inngest.createFunction(
     });
 
     if (history.length < 3) {
-      log.info('Not enough history for summarization, skipping', { sessionId });
-      return { sessionId, skipped: true };
+      log.info('Not enough history for summarization, skipping', { userId });
+      return { userId, skipped: true };
     }
 
     // ── Step 2: Get Existing Memory ───────────────────────────────────────
     const existingMemory = await step.run('get-existing-memory', async () => {
-      const memory = await getUserMemoryBySession(sessionId);
+      const memory = await getUserMemoryByUser(userId);
       return memory?.summary || null;
     });
 
     // ── Step 3: Summarize User Traits ─────────────────────────────────────
     const summary = await step.run('summarize-traits', async () => {
-      log.info('Generating user trait summary', { sessionId });
+      log.info('Generating user trait summary', { userId });
 
       const conversationText = history
         .map(m => `${m.role.toUpperCase()}: ${m.content}`)
@@ -103,7 +103,7 @@ export const memorySummarizeFunction = inngest.createFunction(
       }
 
       log.info('User traits summarized', {
-        sessionId,
+        userId,
         summaryLength: result.length,
       });
 
@@ -112,18 +112,18 @@ export const memorySummarizeFunction = inngest.createFunction(
 
     // ── Step 4: Vectorize Summary ─────────────────────────────────────────
     const embedding = await step.run('embed-summary', async () => {
-      log.info('Vectorizing memory summary', { sessionId });
+      log.info('Vectorizing memory summary', { userId });
       return await getEmbedding(summary, 'passage');
     });
 
     // ── Step 5: Store Memory ──────────────────────────────────────────────
     await step.run('store-memory', async () => {
-      log.info('Storing user memory', { sessionId });
-      await upsertUserMemory(sessionId, summary, embedding, messageCount);
-      log.info('User memory stored successfully', { sessionId });
+      log.info('Storing user memory', { userId });
+      await upsertUserMemory(userId, summary, embedding, messageCount);
+      log.info('User memory stored successfully', { userId });
     });
 
-    return { sessionId, summaryLength: summary.length };
+    return { userId, summaryLength: summary.length };
   }
 );
 

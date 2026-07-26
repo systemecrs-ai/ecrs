@@ -30,6 +30,15 @@ export const CHUNK_MAX_CHARS = 2000;
 /** Dimensionality of the embeddings (updated for new schema) */
 export const EMBEDDING_DIMENSIONS = 2048;
 
+/** Minimum cosine similarity score to consider a semantic cache hit (0–1 scale) */
+export const SEMANTIC_CACHE_HIT_THRESHOLD = 0.95;
+
+/** Name of the MongoDB collection used for semantic response caching */
+export const SEMANTIC_CACHE_COLLECTION = 'semantic_cache';
+
+/** Name of the Atlas Vector Search index on the semantic_cache collection */
+export const SEMANTIC_CACHE_VECTOR_INDEX = 'semantic_cache_vector_index';
+
 /** Maximum number of document chunks to retrieve per query */
 export const DOCUMENT_SEARCH_LIMIT = 5;
 

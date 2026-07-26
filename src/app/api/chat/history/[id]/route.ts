@@ -1,25 +1,39 @@
 import { NextResponse } from 'next/server';
 import { getRecentMessages } from '@/infrastructure/database/chat-history-repository';
+import { createClient } from '@/utils/supabase/server';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('ChatSessionHistoryAPI');
 
 /**
  * GET /api/chat/history/[id]
- * Fetches the recent messages for a specific session ID.
+ * Fetches the recent messages for a specific thread, scoped to the
+ * authenticated user. The [id] parameter is the threadId.
+ * Requires Supabase authentication — returns 401 if unauthorized.
  */
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const sessionId = (await params).id;
-    if (!sessionId) {
-      return NextResponse.json({ error: 'Session ID is required' }, { status: 400 });
+    // Authenticate via Supabase server-side
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized', code: 'AUTH_REQUIRED' },
+        { status: 401 }
+      );
     }
 
-    // Pass a higher limit to ensure we load a good chunk of history
-    const messages = await getRecentMessages(sessionId, 50);
+    const threadId = (await params).id;
+    if (!threadId) {
+      return NextResponse.json({ error: 'Thread ID is required' }, { status: 400 });
+    }
+
+    // Fetch messages filtered by BOTH userId and threadId
+    const messages = await getRecentMessages(user.id, threadId, 50);
     
     // Map to the shape expected by Vercel AI SDK initialMessages
     const formattedMessages = messages.map(msg => ({
@@ -39,3 +53,4 @@ export async function GET(
     );
   }
 }
+

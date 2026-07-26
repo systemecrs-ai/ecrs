@@ -26,7 +26,7 @@ type InngestEvents = {
   };
   'memory/summarize.requested': {
     data: {
-      sessionId: string;
+      userId: string;
       messageCount: number;
     };
   };

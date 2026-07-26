@@ -48,7 +48,10 @@ export interface ProductFilter {
  */
 export interface ChatHistoryMessage {
   _id: ObjectId;
-  sessionId: string;
+  /** Supabase-verified user ID — set server-side, never trusted from client */
+  userId: string;
+  /** Per-conversation thread UUID — scoped under userId for isolation */
+  threadId: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
