@@ -46,7 +46,7 @@ export const memorySummarizeFunction = inngest.createFunction(
       }));
     });
 
-    if (history.length < 3) {
+    if (history.length < 5) {
       log.info('Not enough history for summarization, skipping', { userId });
       return { userId, skipped: true };
     }
