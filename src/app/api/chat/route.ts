@@ -14,10 +14,10 @@
  * @module app/api/chat/route
  */
 
-import { simulateReadableStream } from 'ai';
+import { generateText, simulateReadableStream, streamText } from 'ai';
 import { executeRAGPipeline } from '@/core/rag-pipeline';
 import { runWithContext } from '@/lib/request-context';
-import { getEmbedding } from '@/infrastructure/nvidia/nvidia-client';
+import { getEmbedding, getFastModel } from '@/infrastructure/nvidia/nvidia-client';
 import { checkCache, saveToCache } from '@/infrastructure/database/cache-repository';
 
 import { ValidationError, AppError } from '@/lib/errors';
@@ -103,6 +103,30 @@ export async function POST(req: Request): Promise<Response> {
       threadId,
     });
 
+    // ── Intent Routing (Front-Door Classification) ───────────────────────
+    const { text: intentResponse } = await generateText({
+      model: getFastModel(),
+      prompt: `Classify the user's intent based on their latest query. Respond ONLY with the word CASUAL or RAG. Do not include any other text.
+CASUAL: Greetings, pleasantries, "thank you", or small talk.
+RAG: Product searches, policies, store matrix, or asking for information.
+Query: "${userQuery}"`,
+    });
+    const rawIntent = intentResponse.trim().toUpperCase();
+    const intent = rawIntent.includes('CASUAL') ? 'CASUAL' : 'RAG';
+    log.info('Intent classified', { intent, rawIntent });
+
+    if (intent === 'CASUAL') {
+      log.info('Intent is CASUAL — streaming response from 8B model and exiting');
+      const casualStream = streamText({
+        model: getFastModel(),
+        messages: [
+          ...chatHistory.map((m: { role: string; content: string }) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+          { role: 'user', content: userQuery }
+        ],
+      });
+      return casualStream.toTextStreamResponse();
+    }
+
     // ── Step A: Embed Query for Semantic Cache ───────────────────────────
     // Uses the same NvidiaClient embedding function as the RAG pipeline.
     // This embedding is used for cache lookup; the pipeline generates
@@ -122,7 +146,7 @@ export async function POST(req: Request): Promise<Response> {
 
     // ── Step B: Check Semantic Cache ─────────────────────────────────────
     if (queryEmbedding) {
-      const cacheResult = await checkCache(queryEmbedding);
+      const cacheResult = await checkCache(userQuery, queryEmbedding);
 
       // ── Step C: Cache Hit — return simulated stream immediately ────────
       if (cacheResult.hit) {
@@ -162,7 +186,7 @@ export async function POST(req: Request): Promise<Response> {
     // ── Async Write: Save to Semantic Cache (non-blocking) ──────────────
     // After the stream completes, save the query + embedding + answer to
     // MongoDB. Uses a detached promise chain — does not delay the response.
-    if (queryEmbedding) {
+    if (queryEmbedding && intent === 'RAG') {
       const capturedEmbedding = queryEmbedding;
       const capturedQuery = userQuery;
       Promise.resolve(stream.text)

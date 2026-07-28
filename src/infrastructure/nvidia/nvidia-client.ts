@@ -9,7 +9,7 @@
  */
 
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { getNvidiaApiKey, getNvidiaBaseUrl, getNvidiaChatModel, getNvidiaEmbedModel } from '@/config/env';
+import { getNvidiaApiKey, getNvidiaBaseUrl, getNvidiaChatModel, getNvidiaEmbedModel, getNvidiaSummarizationModel } from '@/config/env';
 import { EmbeddingInputType, EmbeddingResponse } from './types';
 import { withRetry } from './retry-handler';
 import { EmbeddingError, NvidiaApiError, RateLimitError } from '@/lib/errors';
@@ -50,6 +50,17 @@ function getNvidiaProvider() {
 export function getChatModel() {
   const modelId = getNvidiaChatModel();
   log.debug('Creating chat model instance', { model: modelId });
+  return getNvidiaProvider().chatModel(modelId);
+}
+
+/**
+ * Returns a Vercel AI SDK-compatible chat model instance
+ * for the configured fast Nvidia model (e.g., Llama 3.1 8B).
+ * Used for intent routing and cache verification.
+ */
+export function getFastModel() {
+  const modelId = getNvidiaSummarizationModel();
+  log.debug('Creating fast chat model instance', { model: modelId });
   return getNvidiaProvider().chatModel(modelId);
 }
 
