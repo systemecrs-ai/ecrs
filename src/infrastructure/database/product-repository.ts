@@ -116,11 +116,26 @@ export async function hybridSearch(
       commonProjectStage,
     ];
 
-    // Execute both in parallel
-    const [vectorResults, lexicalResults] = await Promise.all([
+    // Execute both in parallel with a 4000ms circuit breaker timeout
+    const fetchPromise = Promise.all([
       collection.aggregate<any>(vectorPipeline).toArray(),
       collection.aggregate<any>(lexicalPipeline).toArray()
     ]);
+
+    const timeoutPromise = new Promise<[any[], any[]]>((_, reject) => {
+      setTimeout(() => reject(new Error('Database query timed out after 4000ms')), 4000);
+    });
+
+    let vectorResults: any[];
+    let lexicalResults: any[];
+
+    try {
+      [vectorResults, lexicalResults] = await Promise.race([fetchPromise, timeoutPromise]);
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      log.warn('Hybrid search circuit breaker tripped', { error: err.message, queryText });
+      return [];
+    }
 
     // Apply Reciprocal Rank Fusion (RRF)
     const rrfMap = new Map<string, any>();

@@ -124,7 +124,7 @@ Query: "${userQuery}"`,
           { role: 'user', content: userQuery }
         ],
       });
-      return casualStream.toTextStreamResponse();
+      return casualStream.toUIMessageStreamResponse();
     }
 
     // ── Step A: Embed Query for Semantic Cache ───────────────────────────
@@ -203,7 +203,7 @@ Query: "${userQuery}"`,
     }
 
     // ── Return Streaming Response ────────────────────────────────────────
-    return stream.toTextStreamResponse();
+    return stream.toUIMessageStreamResponse();
   } catch (error) {
     return handleError(error);
   }

@@ -15,9 +15,12 @@ import Image from 'next/image';
 interface MessageBubbleProps {
   role: 'user' | 'assistant';
   content: string;
+  toolInvocations?: any[];
+  onConfirmAction?: (payload: any) => void;
+  onCancelAction?: (payload: any) => void;
 }
 
-export default function MessageBubble({ role, content }: MessageBubbleProps) {
+export default function MessageBubble({ role, content, toolInvocations, onConfirmAction, onCancelAction }: MessageBubbleProps) {
   const isUser = role === 'user';
 
   // Basic markdown-to-HTML for assistant messages
@@ -57,10 +60,60 @@ export default function MessageBubble({ role, content }: MessageBubbleProps) {
           {isUser ? (
             <p className="text-sm leading-relaxed whitespace-pre-wrap">{content}</p>
           ) : (
-            <div
-              className="prose-chat text-sm leading-relaxed"
-              dangerouslySetInnerHTML={{ __html: formattedContent }}
-            />
+            <div className="flex flex-col gap-3">
+              {content && (
+                <div
+                  className="prose-chat text-sm leading-relaxed"
+                  dangerouslySetInnerHTML={{ __html: formattedContent }}
+                />
+              )}
+
+              {/* Tool Invocations Rendering */}
+              {toolInvocations?.map(tool => {
+                // Loading State
+                if (tool.state !== 'result') {
+                  let loadingText = `Running ${tool.toolName}...`;
+                  if (tool.toolName === 'checkInventory') loadingText = 'Checking store inventory...';
+                  if (tool.toolName === 'fetchOrderStatus') loadingText = 'Fetching order status...';
+                  if (tool.toolName === 'reserveItemInStore') loadingText = 'Preparing reservation...';
+
+                  return (
+                    <div key={tool.toolCallId} className="flex items-center gap-2 mt-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs text-white/70 w-fit">
+                      <div className="animate-spin h-3 w-3 border-2 border-indigo-500 border-t-transparent rounded-full" />
+                      {loadingText}
+                    </div>
+                  );
+                }
+
+                // Result State (HITL Confirmation Card)
+                const result = tool.result;
+                if (result?.hitlRequired && tool.toolName === 'reserveItemInStore') {
+                  return (
+                    <div key={tool.toolCallId} className="mt-2 p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/30">
+                      <h4 className="text-sm font-semibold text-indigo-300 mb-1">Confirmation Required</h4>
+                      <p className="text-xs text-indigo-200/70 mb-4">{result.data?.actionSummary || 'Approve this action to proceed.'}</p>
+                      
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => onConfirmAction?.(result.data)}
+                          className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer"
+                        >
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => onCancelAction?.(result.data)}
+                          className="px-4 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return null;
+              })}
+            </div>
           )}
         </div>
       </div>

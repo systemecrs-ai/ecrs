@@ -57,9 +57,13 @@ On a cache miss, the pipeline transitions to a parallelized retrieval phase:
 - **User Memory**: Executes a vector search against the user's vectorized long-term memory summaries (filtered strictly by `userId`).
 These searches execute concurrently via `Promise.all` to minimize latency.
 
-### Phase 5: Reranking & Generation
+### Phase 5: Reranking, Tool Calling & Generation (ReAct Engine)
 1. **Reranking**: Product and document candidates are merged and sent to the Cohere reranker (`rerank-english-v3.0`). The top 5 semantically dense chunks are retained. If the reranker fails, the system gracefully falls back to the original vector search results.
-2. **Generation**: A comprehensive system prompt is constructed using the triple context (Products, Documents, User Memory). The `streamText` function from the Vercel AI SDK invokes the 70B model to generate the highly accurate, zero-hallucination response.
+2. **Generation & Tool Execution (The ReAct Loop)**: A comprehensive system prompt is constructed using the triple context (Products, Documents, User Memory) and injected with **ReAct Engine** instructions. The `streamText` function from the Vercel AI SDK invokes the 70B model with a suite of enterprise tools (e.g., `checkInventory`, `fetchOrderStatus`, `reserveItemInStore`).
+   - **Type-Safe Tool Layer**: All tools enforce strict Zod schemas and are wrapped in safe execution handlers that catch exceptions and return a standardized `AgentToolResult`.
+   - **Circuit Breakers**: The engine enforces a hard limit of `maxSteps: 5` to prevent infinite reasoning loops, and utilizes an `AbortSignal.timeout(15000)` to ensure execution does not exceed a 15-second ceiling.
+   - **Human-in-the-Loop (HITL)**: For write/action tools like `reserveItemInStore`, the backend safely halts database mutations unless an explicit `confirmed: true` flag is received. It returns a `hitlRequired` payload to the client.
+   - **Tool Observability & UI Rendering**: The client application dynamically renders loading indicators for active tools and an interactive Confirmation Card for HITL events. User approvals send a callback to the API route, seamlessly resuming the ReAct loop.
 
 ### Phase 6: Asynchronous Operations (Background Jobs)
 Once the streaming response is initiated, the system detaches asynchronous background operations (fire-and-forget) to ensure zero impact on user latency:

@@ -12,7 +12,7 @@
  */
 
 import { useChat } from '@ai-sdk/react';
-import { TextStreamChatTransport } from 'ai';
+import { DefaultChatTransport } from 'ai';
 import { useRef, useEffect, useState, useCallback, type FormEvent } from 'react';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
@@ -48,7 +48,7 @@ function getMessageText(message: { content?: string; parts?: Array<{ type: strin
 export default function ChatInterface({ threadId, initialMessages = [], onToggleSidebar, onNewChat }: ChatInterfaceProps) {
   const { messages, sendMessage, status, error, setMessages } = useChat({
     id: threadId,
-    transport: new TextStreamChatTransport({ api: '/api/chat' }),
+    transport: new DefaultChatTransport({ api: '/api/chat' }),
   });
 
   useEffect(() => {
@@ -175,13 +175,32 @@ export default function ChatInterface({ threadId, initialMessages = [], onToggle
         ) : (
           /* ── Messages List ──────────────────────────────────────── */
           <div className="flex flex-col py-6">
-            {messages.map((message) => (
-              <MessageBubble
-                key={message.id}
-                role={message.role as 'user' | 'assistant'}
-                content={getMessageText(message)}
+            {messages.map((message: any) => {
+              const toolInvocations = message.parts 
+                ? message.parts.filter((p: any) => p.type === 'tool-invocation').map((p: any) => p.toolInvocation)
+                : message.toolInvocations;
+
+              return (
+                <MessageBubble
+                  key={message.id}
+                  role={message.role as 'user' | 'assistant'}
+                  content={getMessageText(message)}
+                  toolInvocations={toolInvocations}
+                onConfirmAction={(payload) => {
+                  sendMessage(
+                    { text: `Confirmed action for ${payload.toolName}. Please proceed using confirmed: true.` },
+                    { body: { threadId } }
+                  );
+                }}
+                onCancelAction={(payload) => {
+                  sendMessage(
+                    { text: `User cancelled action for ${payload.toolName}. Do not proceed.` },
+                    { body: { threadId } }
+                  );
+                }}
               />
-            ))}
+              );
+            })}
 
             {/* Retrieval indicator — shows during query processing */}
             <div className="px-4">

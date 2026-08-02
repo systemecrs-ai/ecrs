@@ -17,11 +17,12 @@
  * @module core/rag-pipeline
  */
 
-import { streamText, rerank } from 'ai';
+import { streamText, rerank, isStepCount } from 'ai';
 import { cohere } from '@ai-sdk/cohere';
 import { getEmbedding, getChatModel } from '@/infrastructure/nvidia/nvidia-client';
 import { hybridSearch } from '@/infrastructure/database/product-repository';
 import { searchDocumentChunks } from '@/infrastructure/database/document-repository';
+import { agentTools } from '@/infrastructure/tools';
 import { buildSystemPrompt, buildMessages } from './prompt-builder';
 import { retrieveUserMemory, maybeDispatchMemorySummarization } from './memory-service';
 import { appendMessage } from '@/infrastructure/database/chat-history-repository';
@@ -43,7 +44,10 @@ const log = createLogger('RAGPipeline');
  * Contains the streaming result and RAG context metadata.
  */
 export interface RAGPipelineResult {
-  stream: Awaited<ReturnType<typeof streamText>>;
+  stream: {
+    text: PromiseLike<string>;
+    toUIMessageStreamResponse: (options?: any) => Response;
+  };
   context: RAGContext;
 }
 
@@ -186,13 +190,30 @@ export async function executeRAGPipeline(
   log.info('Stage 4: Streaming response from Nvidia');
   const model = getChatModel();
 
+  const enhancedSystemPrompt = `${systemPrompt}
+
+AGENT INSTRUCTIONS (ReAct Engine):
+You are an Enterprise-Grade Level 3 AI Agent. You use a Reason-Act (ReAct) loop to fulfill user requests using available tools.
+- Evaluate if a tool can help fulfill the user's request.
+- Use 'checkInventory' to verify product stock by SKU and Size.
+- Use 'fetchOrderStatus' to check the status of orders.
+- Use 'reserveItemInStore' to reserve items.
+- If a tool returns 'hitlRequired: true', present the confirmation card to the user and explain that they must approve the action.
+- Synthesize tool results with the provided context to answer the user accurately.`;
+
+  const abortSignal = AbortSignal.timeout(15000);
+
   const result = streamText({
     model,
-    instructions: systemPrompt,
+    instructions: enhancedSystemPrompt,
     messages: messages.map(m => ({
       role: m.role as 'user' | 'assistant',
       content: m.content,
     })),
+    tools: agentTools,
+    stopWhen: isStepCount(5),
+    toolChoice: 'auto',
+    abortSignal,
     temperature: CHAT_TEMPERATURE,
     topP: CHAT_TOP_P,
     maxOutputTokens: MAX_COMPLETION_TOKENS,
@@ -228,7 +249,7 @@ export async function executeRAGPipeline(
 async function persistAndTriggerMemory(
   userId: string,
   userQuery: string,
-  streamResult: Awaited<ReturnType<typeof streamText>>
+  streamResult: { text: PromiseLike<string> }
 ): Promise<void> {
   // Persist user message immediately
   await appendMessage(userId, 'user', userQuery);

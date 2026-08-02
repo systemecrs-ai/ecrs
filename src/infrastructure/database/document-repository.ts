@@ -115,7 +115,20 @@ export async function searchDocumentChunks(
       },
     ];
 
-    const results = await collection.aggregate<any>(pipeline).toArray();
+    const fetchPromise = collection.aggregate<any>(pipeline).toArray();
+
+    const timeoutPromise = new Promise<any[]>((_, reject) => {
+      setTimeout(() => reject(new Error('Database query timed out after 4000ms')), 4000);
+    });
+
+    let results: any[];
+    try {
+      results = await Promise.race([fetchPromise, timeoutPromise]);
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      log.warn('Document vector search circuit breaker tripped', { error: err.message });
+      return [];
+    }
 
     const mappedResults: DocumentSearchResult[] = results.map(doc => {
       return {
