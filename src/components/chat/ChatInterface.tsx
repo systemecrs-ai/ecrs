@@ -12,6 +12,7 @@
  */
 
 import { useChat } from '@ai-sdk/react';
+import { useCanvas } from '@/context/CanvasContext';
 import { DefaultChatTransport } from 'ai';
 import { useRef, useEffect, useState, useCallback, type FormEvent } from 'react';
 import MessageBubble from './MessageBubble';
@@ -46,10 +47,40 @@ function getMessageText(message: { content?: string; parts?: Array<{ type: strin
 }
 
 export default function ChatInterface({ threadId, initialMessages = [], onToggleSidebar, onNewChat }: ChatInterfaceProps) {
+  const { setCanvasView } = useCanvas();
   const { messages, sendMessage, status, error, setMessages } = useChat({
     id: threadId,
     transport: new DefaultChatTransport({ api: '/api/chat' }),
   });
+
+  // Listen for tool results (e.g. checkInventory, updateProductCanvas)
+  useEffect(() => {
+    if (messages.length > 0) {
+      const lastMessage = messages[messages.length - 1] as any;
+      if (lastMessage.role === 'assistant') {
+        const toolInvocations = lastMessage.toolInvocations || 
+          (lastMessage.parts && lastMessage.parts.filter((p: any) => p.type === 'tool-invocation').map((p: any) => p.toolInvocation));
+        
+        if (toolInvocations) {
+          // Check for explicit UI control tool from the LLM
+          const canvasTool = toolInvocations.find((t: any) => t.toolName === 'updateProductCanvas');
+          if (canvasTool && canvasTool.args?.items) {
+            setCanvasView('PRODUCT_RESULTS', canvasTool.args.items);
+            return;
+          }
+
+          const inventoryTool = toolInvocations.find((t: any) => t.toolName === 'checkInventory' && t.state === 'result');
+          if (inventoryTool && inventoryTool.result) {
+            const products = Array.isArray(inventoryTool.result) ? inventoryTool.result : 
+                             inventoryTool.result.items ? inventoryTool.result.items : 
+                             inventoryTool.result.products ? inventoryTool.result.products : 
+                             [inventoryTool.result];
+            setCanvasView('PRODUCT_RESULTS', products);
+          }
+        }
+      }
+    }
+  }, [messages, setCanvasView]);
 
   useEffect(() => {
     if (initialMessages && initialMessages.length > 0) {

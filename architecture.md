@@ -42,10 +42,10 @@ When a POST request arrives at `/api/chat`, it executes the following strictly c
 Before domain logic executes, the system establishes a secure request context using Node's `AsyncLocalStorage` (`runWithContext`). The Supabase-verified `userId` and conversation `threadId` are threaded through the entire call stack implicitly. This ensures deep infrastructure layers (like the chat history repository) can enforce tenant isolation without polluting intermediate function signatures.
 
 ### Phase 2: Intent Routing (Front-Door Classification)
-The request is immediately classified using the fast 8B model. The LLM determines if the intent is `CASUAL` (small talk, greetings) or `RAG` (product searches, policy questions). If classified as `CASUAL`, the system streams a lightweight response from the 8B model and immediately exits, saving the 70B model's compute for heavy RAG operations.
+The request is immediately classified using the fast 8B model. The LLM determines if the intent is `CASUAL` (small talk, greetings), `RAG_KNOWLEDGE` (product searches, policy questions), or `TOOL_ACTION` (checking inventory, order status). If classified as `CASUAL`, the system streams a lightweight response from the 8B model and immediately exits, saving the 70B model's compute. If classified as `TOOL_ACTION`, the system completely bypasses the semantic cache and vector retrieval (saving database compute) and jumps straight to the 70B model with the user prompt and tools array to interact with real-time data dynamically.
 
 ### Phase 3: Two-Tier Semantic Caching
-If the intent is `RAG`, the system attempts a cache interception to prevent redundant LLM generation:
+If the intent is `RAG_KNOWLEDGE`, the system attempts a cache interception to prevent redundant LLM generation:
 1. **Vector Similarity**: Generates a 2048-d query embedding and performs a MongoDB `$vectorSearch` against the `semantic_cache` collection with a cosine similarity threshold of 0.70.
 2. **LLM Verification**: If a candidate is found, it is sent to the 8B model to explicitly verify if the original cached query and the new query ask for the exact same underlying information.
 If verified, the cached answer is chunked and streamed back using `simulateReadableStream`, completely bypassing the heavy RAG pipeline.

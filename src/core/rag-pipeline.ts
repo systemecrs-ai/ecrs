@@ -22,7 +22,6 @@ import { cohere } from '@ai-sdk/cohere';
 import { getEmbedding, getChatModel } from '@/infrastructure/nvidia/nvidia-client';
 import { hybridSearch } from '@/infrastructure/database/product-repository';
 import { searchDocumentChunks } from '@/infrastructure/database/document-repository';
-import { agentTools } from '@/infrastructure/tools';
 import { buildSystemPrompt, buildMessages } from './prompt-builder';
 import { retrieveUserMemory, maybeDispatchMemorySummarization } from './memory-service';
 import { appendMessage } from '@/infrastructure/database/chat-history-repository';
@@ -68,7 +67,10 @@ export interface RAGPipelineResult {
 export async function executeRAGPipeline(
   userQuery: string,
   chatHistory: Message[] = [],
-  userId?: string
+  userId?: string,
+  intent: string = 'RAG_KNOWLEDGE',
+  subDomain: string = 'GENERAL_HYBRID',
+  canvasState: string | null = null
 ): Promise<RAGPipelineResult> {
   const startTime = Date.now();
   log.info('Starting RAG pipeline (triple-retrieval)', {
@@ -97,16 +99,20 @@ export async function executeRAGPipeline(
   // Fire all three searches simultaneously
   const [productResults, documentResults, userMemory] = await Promise.all([
     // Search 1: Products
-    hybridSearch(userQuery, queryEmbedding, VECTOR_SEARCH_LIMIT).catch(error => {
-      log.error('Product search failed', { error: (error as Error).message });
-      return [] as ProductSearchResult[];
-    }),
+    subDomain !== 'POLICY_LOOKUP'
+      ? hybridSearch(userQuery, queryEmbedding, VECTOR_SEARCH_LIMIT).catch(error => {
+          log.error('Product search failed', { error: (error as Error).message });
+          return [] as ProductSearchResult[];
+        })
+      : Promise.resolve([]),
 
     // Search 2: Documents
-    searchDocumentChunks(queryEmbedding, DOCUMENT_SEARCH_LIMIT).catch(error => {
-      log.error('Document search failed', { error: (error as Error).message });
-      return [] as DocumentSearchResult[];
-    }),
+    subDomain !== 'PRODUCT_SEARCH'
+      ? searchDocumentChunks(queryEmbedding, DOCUMENT_SEARCH_LIMIT).catch(error => {
+          log.error('Document search failed', { error: (error as Error).message });
+          return [] as DocumentSearchResult[];
+        })
+      : Promise.resolve([]),
 
     // Search 3: User Memory (only if userId provided)
     userId
@@ -174,7 +180,7 @@ export async function executeRAGPipeline(
 
   // ── Stage 3: Build Prompt (Triple Context) ──────────────────────────────
   log.info('Stage 3: Building system prompt with triple context');
-  const systemPrompt = buildSystemPrompt(retrievedProducts, retrievedDocuments, userMemory);
+  const systemPrompt = buildSystemPrompt(intent, subDomain, canvasState, retrievedProducts, retrievedDocuments, userMemory);
   const messages = buildMessages(chatHistory, userQuery);
 
   const ragContext: RAGContext = {
@@ -190,29 +196,15 @@ export async function executeRAGPipeline(
   log.info('Stage 4: Streaming response from Nvidia');
   const model = getChatModel();
 
-  const enhancedSystemPrompt = `${systemPrompt}
-
-AGENT INSTRUCTIONS (ReAct Engine):
-You are an Enterprise-Grade Level 3 AI Agent. You use a Reason-Act (ReAct) loop to fulfill user requests using available tools.
-- Evaluate if a tool can help fulfill the user's request.
-- Use 'checkInventory' to verify product stock by SKU and Size.
-- Use 'fetchOrderStatus' to check the status of orders.
-- Use 'reserveItemInStore' to reserve items.
-- If a tool returns 'hitlRequired: true', present the confirmation card to the user and explain that they must approve the action.
-- Synthesize tool results with the provided context to answer the user accurately.`;
-
   const abortSignal = AbortSignal.timeout(15000);
 
   const result = streamText({
     model,
-    instructions: enhancedSystemPrompt,
+    instructions: systemPrompt,
     messages: messages.map(m => ({
       role: m.role as 'user' | 'assistant',
       content: m.content,
     })),
-    tools: agentTools,
-    stopWhen: isStepCount(5),
-    toolChoice: 'auto',
     abortSignal,
     temperature: CHAT_TEMPERATURE,
     topP: CHAT_TOP_P,

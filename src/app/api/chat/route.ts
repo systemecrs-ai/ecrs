@@ -14,14 +14,18 @@
  * @module app/api/chat/route
  */
 
-import { generateText, simulateReadableStream, streamText } from 'ai';
+import { generateText, simulateReadableStream, streamText, isStepCount } from 'ai';
 import { executeRAGPipeline } from '@/core/rag-pipeline';
 import { runWithContext } from '@/lib/request-context';
-import { getEmbedding, getFastModel } from '@/infrastructure/nvidia/nvidia-client';
+import { getEmbedding, getFastModel, getChatModel } from '@/infrastructure/nvidia/nvidia-client';
 import { checkCache, saveToCache } from '@/infrastructure/database/cache-repository';
+import { agentTools } from '@/infrastructure/tools';
+import { appendMessage } from '@/infrastructure/database/chat-history-repository';
+import { maybeDispatchMemorySummarization } from '@/core/memory-service';
 
 import { ValidationError, AppError } from '@/lib/errors';
 import { createLogger } from '@/lib/logger';
+import { buildIntentPrompt } from '@/core/prompt-builder';
 
 const log = createLogger('ChatRoute');
 
@@ -103,17 +107,38 @@ export async function POST(req: Request): Promise<Response> {
       threadId,
     });
 
+    // Format conversation history for intent router
+    const recentHistory = chatHistory.slice(-3);
+    const formattedHistory : string = recentHistory.length > 0
+      ? recentHistory.map((m: any) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n')
+      : 'None';
+
     // ── Intent Routing (Front-Door Classification) ───────────────────────
     const { text: intentResponse } = await generateText({
       model: getFastModel(),
-      prompt: `Classify the user's intent based on their latest query. Respond ONLY with the word CASUAL or RAG. Do not include any other text.
-CASUAL: Greetings, pleasantries, "thank you", or small talk.
-RAG: Product searches, policies, store matrix, or asking for information.
-Query: "${userQuery}"`,
+      prompt: buildIntentPrompt(userQuery, formattedHistory),
     });
-    const rawIntent = intentResponse.trim().toUpperCase();
-    const intent = rawIntent.includes('CASUAL') ? 'CASUAL' : 'RAG';
-    log.info('Intent classified', { intent, rawIntent });
+
+    let intent = 'RAG_KNOWLEDGE';
+    let subDomain = 'GENERAL_HYBRID';
+
+    const lines = intentResponse.trim().split('\n');
+    for (const line of lines) {
+      if (line.startsWith('INTENT:')) {
+        const i = line.replace('INTENT:', '').trim().toUpperCase();
+        if (i.includes('CASUAL')) intent = 'CASUAL';
+        else if (i.includes('TOOL_ACTION')) intent = 'TOOL_ACTION';
+        else if (i.includes('RAG')) intent = 'RAG_KNOWLEDGE';
+      }
+      if (line.startsWith('SUBDOMAIN:')) {
+        const s = line.replace('SUBDOMAIN:', '').trim().toUpperCase();
+        if (s.includes('PRODUCT_SEARCH')) subDomain = 'PRODUCT_SEARCH';
+        else if (s.includes('POLICY_LOOKUP')) subDomain = 'POLICY_LOOKUP';
+        else if (s.includes('GENERAL_HYBRID')) subDomain = 'GENERAL_HYBRID';
+      }
+    }
+
+    log.info('Intent classified', { intent, subDomain, raw: intentResponse });
 
     if (intent === 'CASUAL') {
       log.info('Intent is CASUAL — streaming response from 8B model and exiting');
@@ -125,6 +150,41 @@ Query: "${userQuery}"`,
         ],
       });
       return casualStream.toUIMessageStreamResponse();
+    }
+
+    if (intent === 'TOOL_ACTION') {
+      log.info('Intent is TOOL_ACTION — bypassing cache and vector search');
+
+      const toolSystemPrompt = `You are a helpful AI assistant.
+If you are executing a tool and the user has not provided required parameters (like SKU or Order ID), ask them conversationally for the missing information.`;
+
+      const toolStreamResult = streamText({
+        model: getChatModel(),
+        instructions: toolSystemPrompt,
+        messages: [
+          ...chatHistory.map((m: { role: string; content: string }) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+          { role: 'user', content: userQuery }
+        ],
+        tools: agentTools,
+        toolChoice: 'auto',
+        stopWhen: isStepCount(5),
+      });
+
+      // Background persist (non-blocking)
+      Promise.resolve().then(async () => {
+        await appendMessage(userId, 'user', userQuery);
+        try {
+          const fullText = await toolStreamResult.text;
+          if (fullText) {
+            await appendMessage(userId, 'assistant', fullText);
+          }
+        } catch (error) {
+          log.error('Failed to persist tool assistant message', { error: (error as Error).message });
+        }
+        await maybeDispatchMemorySummarization(userId);
+      });
+
+      return toolStreamResult.toUIMessageStreamResponse();
     }
 
     // ── Step A: Embed Query for Semantic Cache ───────────────────────────
@@ -176,17 +236,15 @@ Query: "${userQuery}"`,
     // ── Step D: Cache Miss — Execute RAG Pipeline (Triple-Retrieval) ─────
     // Wrap in request context so that downstream appendMessage calls
     // in the RAG pipeline automatically receive userId + threadId.
-    // The pipeline receives userId as its user identity parameter
-    // (memory retrieval is user-scoped, not thread-scoped).
     const { stream } = await runWithContext(
       { userId, threadId },
-      () => executeRAGPipeline(userQuery, chatHistory, userId)
+      () => executeRAGPipeline(userQuery, chatHistory, userId, intent, subDomain, "Canvas data not yet tracked")
     );
 
     // ── Async Write: Save to Semantic Cache (non-blocking) ──────────────
     // After the stream completes, save the query + embedding + answer to
     // MongoDB. Uses a detached promise chain — does not delay the response.
-    if (queryEmbedding && intent === 'RAG') {
+    if (queryEmbedding && intent === 'RAG_KNOWLEDGE') {
       const capturedEmbedding = queryEmbedding;
       const capturedQuery = userQuery;
       Promise.resolve(stream.text)

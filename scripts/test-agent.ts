@@ -24,11 +24,10 @@ async function runTests() {
     score: 0.99
   }];
 
-  const systemPrompt = buildSystemPrompt(mockProducts, mockDocuments, null);
-
-  async function runTest(testName: string, query: string, assertion: (result: any) => void) {
+  async function runTest(testName: string, query: string, intent: string, subDomain: string, assertion: (result: any) => void) {
     console.log(`\n--- Running ${testName} ---`);
     console.log(`Query: "${query}"`);
+    const systemPrompt = buildSystemPrompt(intent, subDomain, null, mockProducts, mockDocuments, null);
     try {
       const result = await generateText({
         model,
@@ -55,6 +54,8 @@ async function runTests() {
   await runTest(
     'Test A (Parameter Gathering)',
     'Check inventory for SKU-999',
+    'TOOL_ACTION',
+    'PRODUCT_SEARCH',
     (result) => {
       const hasToolCall = result.toolCalls && result.toolCalls.length > 0;
       const asksForSize = result.text.toLowerCase().includes('size');
@@ -76,6 +77,8 @@ async function runTests() {
   await runTest(
     'Test B (Tool Execution)',
     'Check inventory for SKU-999 size L',
+    'TOOL_ACTION',
+    'PRODUCT_SEARCH',
     (result) => {
       if (!result.toolCalls || result.toolCalls.length === 0) {
         throw new Error('Model failed to trigger a tool call.');
@@ -96,6 +99,8 @@ async function runTests() {
   await runTest(
     'Test C (RAG Fallback)',
     'What is the holiday grace period?',
+    'RAG_KNOWLEDGE',
+    'POLICY_LOOKUP',
     (result) => {
       if (result.toolCalls && result.toolCalls.length > 0) {
         throw new Error('Model incorrectly called a tool for a RAG policy query.');

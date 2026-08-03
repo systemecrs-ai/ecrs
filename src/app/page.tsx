@@ -7,6 +7,8 @@ import Header from '@/components/layout/Header';
 import ChatInterface from '@/components/chat/ChatInterface';
 import ChatSidebar from '@/components/chat/ChatSidebar';
 import ProductCanvas from '@/components/ui/ProductCanvas';
+import ProductResultsCanvas from '@/components/canvas/ProductResultsCanvas';
+import { CanvasProvider, useCanvas } from '@/context/CanvasContext';
 import { Analytics } from "@vercel/analytics/next"
 
 /**
@@ -24,16 +26,14 @@ function getLocalThreadId(): string {
 }
 
 /**
- * Home Page
- *
- * Main application page rendering the Split View layout:
- * Product Canvas (Main) and collapsible AI Chat Drawer.
+ * Main Application View
  */
-export default function Home() {
+function MainApp() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [currentThreadId, setCurrentThreadId] = useState<string>('');
   const [initialMessages, setInitialMessages] = useState<any[]>([]);
+  const { activeView, viewData, setCanvasView } = useCanvas();
 
   useEffect(() => {
     setCurrentThreadId(getLocalThreadId());
@@ -85,7 +85,11 @@ export default function Home() {
               isChatOpen ? 'mr-0 lg:mr-[400px]' : ''
             } ${isSidebarOpen ? 'ml-0 lg:ml-64' : ''}`}
           >
-            <ProductCanvas />
+            {activeView === 'PRODUCT_RESULTS' ? (
+              <ProductResultsCanvas products={viewData} onBack={() => setCanvasView('DEFAULT_CANVAS')} />
+            ) : (
+              <ProductCanvas />
+            )}
           </div>
 
           {/* Collapsible Chat Drawer (Right) */}
@@ -113,5 +117,13 @@ export default function Home() {
         </main>
       </div>
     </>
+  );
+}
+
+export default function Home() {
+  return (
+    <CanvasProvider>
+      <MainApp />
+    </CanvasProvider>
   );
 }

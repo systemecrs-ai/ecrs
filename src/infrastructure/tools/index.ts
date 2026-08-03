@@ -174,5 +174,22 @@ export const agentTools = {
          } as AgentToolResult<any>;
       }
     }
+  } as any),
+
+  updateProductCanvas: tool({
+    description: 'Updates the UI canvas with a curated list of products to display to the user.',
+    parameters: z.object({
+      items: z.array(z.object({
+        sku: z.string(),
+        name: z.string(),
+        price: z.coerce.number(),
+        description: z.string(),
+        imageUrl: z.string().optional()
+      })).describe("The curated list of products to display on the user's canvas.")
+    }),
+    execute: async (args: any, options: any) => {
+      // The actual UI update happens on the client via tool interception.
+      return { success: true, message: 'Canvas updated successfully with the curated products.' } as AgentToolResult<any>;
+    }
   } as any)
 };
