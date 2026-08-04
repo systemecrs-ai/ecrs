@@ -1,20 +1,10 @@
 /**
- * Chat API Route Handler
- * 
- * POST /api/chat — Accepts user messages, runs the triple-retrieval
- * RAG pipeline, and returns a streaming text response via Vercel AI SDK v7.
- * 
- * Includes a Semantic Interception Cache (MongoDB Atlas Vector Search)
- * that bypasses the heavy LLM for repetitive queries with ≥95%
- * cosine similarity.
- * 
- * Authenticates users via Supabase, extracts threadId for
- * conversation isolation, and persists messages to chat history.
- * 
+ * Chat API Route Handler — Enterprise Architecture
  * @module app/api/chat/route
  */
 
 import { generateText, simulateReadableStream, streamText, isStepCount } from 'ai';
+import { waitUntil } from '@vercel/functions';
 import { executeRAGPipeline } from '@/core/rag-pipeline';
 import { runWithContext } from '@/lib/request-context';
 import { getEmbedding, getFastModel, getChatModel } from '@/infrastructure/nvidia/nvidia-client';
@@ -25,40 +15,31 @@ import { maybeDispatchMemorySummarization } from '@/core/memory-service';
 
 import { ValidationError, AppError } from '@/lib/errors';
 import { createLogger } from '@/lib/logger';
-import { buildIntentPrompt } from '@/core/prompt-builder';
+import { buildIntentPrompt, buildSystemPrompt } from '@/core/prompt-builder';
 
 const log = createLogger('ChatRoute');
 
-/**
- * Handles POST requests to /api/chat.
- * 
- * The request body follows the Vercel AI SDK v7 transport protocol,
- * containing a messages array with UIMessage objects and a threadId.
- * 
- * Returns a streaming response using Vercel AI SDK's UI message stream protocol.
- */
 export async function POST(req: Request): Promise<Response> {
   try {
-    // ── Parse & Validate Request ─────────────────────────────────────────
+    // ── 1. Parse & Validate Request ───────────────────────────────────────
     const body = await req.json();
 
     if (!body.messages || !Array.isArray(body.messages) || body.messages.length === 0) {
       throw new ValidationError('Request must include a non-empty "messages" array.');
     }
 
-    // ── Authenticate — extract verified userId from middleware header ─────
     const userId = req.headers.get('x-user-id');
-
     if (!userId) {
       throw new AppError('Unauthorized access to chat API.', 'UNAUTHORIZED', 401);
     }
 
-    // ── Extract threadId from request body ────────────────────────────────
     const threadId = typeof body.threadId === 'string' && body.threadId.trim()
       ? body.threadId.trim()
       : 'default';
 
-    // Extract the latest user message from the v7 UIMessage format
+    // Extract current Canvas State sent from React client
+    const canvasState = typeof body.canvasState === 'string' ? body.canvasState : null;
+
     const messages = body.messages;
     const lastMessage = messages[messages.length - 1];
 
@@ -66,7 +47,6 @@ export async function POST(req: Request): Promise<Response> {
       throw new ValidationError('Last message must be a user message.');
     }
 
-    // Extract text from parts (v7 UIMessage format) or fallback to content
     let userQuery = '';
     if (lastMessage.parts && Array.isArray(lastMessage.parts)) {
       userQuery = lastMessage.parts
@@ -82,17 +62,13 @@ export async function POST(req: Request): Promise<Response> {
       throw new ValidationError('User message must contain non-empty text.');
     }
 
-    // Build chat history from previous messages
-    const chatHistory = messages.slice(0, -1).map((msg: {
-      role: string;
-      parts?: Array<{ type: string; text?: string }>;
-      content?: string;
-    }) => {
+    // Build chat history array
+    const chatHistory = messages.slice(0, -1).map((msg: any) => {
       let content = '';
       if (msg.parts && Array.isArray(msg.parts)) {
         content = msg.parts
-          .filter((p: { type: string; text?: string }) => p.type === 'text' && typeof p.text === 'string')
-          .map((p: { type: string; text?: string }) => p.text ?? '')
+          .filter((p: any) => p.type === 'text' && typeof p.text === 'string')
+          .map((p: any) => p.text)
           .join('');
       } else if (msg.content) {
         content = msg.content;
@@ -100,20 +76,15 @@ export async function POST(req: Request): Promise<Response> {
       return { role: msg.role as 'user' | 'assistant' | 'system', content };
     });
 
-    log.info('Chat request received', {
-      query: userQuery.slice(0, 100),
-      historyLength: chatHistory.length,
-      userId,
-      threadId,
-    });
+    log.info('Chat request received', { query: userQuery.slice(0, 100), historyLength: chatHistory.length, userId, threadId });
 
-    // Format conversation history for intent router
+    // Format short history for Intent Router
     const recentHistory = chatHistory.slice(-3);
-    const formattedHistory : string = recentHistory.length > 0
+    const formattedHistory = recentHistory.length > 0
       ? recentHistory.map((m: any) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n')
       : 'None';
 
-    // ── Intent Routing (Front-Door Classification) ───────────────────────
+    // ── 2. Front-Door Intent Routing ─────────────────────────────────────
     const { text: intentResponse } = await generateText({
       model: getFastModel(),
       prompt: buildIntentPrompt(userQuery, formattedHistory),
@@ -140,83 +111,33 @@ export async function POST(req: Request): Promise<Response> {
 
     log.info('Intent classified', { intent, subDomain, raw: intentResponse });
 
+    // ── Branch A: CASUAL Intent ───────────────────────────────────────────
     if (intent === 'CASUAL') {
-      log.info('Intent is CASUAL — streaming response from 8B model and exiting');
+      log.info('Streaming CASUAL response via 8B model');
       const casualStream = streamText({
         model: getFastModel(),
         messages: [
-          ...chatHistory.map((m: { role: string; content: string }) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+          ...chatHistory.map((m : any) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
           { role: 'user', content: userQuery }
         ],
       });
       return casualStream.toUIMessageStreamResponse();
     }
 
-    if (intent === 'TOOL_ACTION') {
-      log.info('Intent is TOOL_ACTION — bypassing cache and vector search');
-
-      const toolSystemPrompt = `You are a helpful AI assistant.
-If you are executing a tool and the user has not provided required parameters (like SKU or Order ID), ask them conversationally for the missing information.`;
-
-      const toolStreamResult = streamText({
-        model: getChatModel(),
-        instructions: toolSystemPrompt,
-        messages: [
-          ...chatHistory.map((m: { role: string; content: string }) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
-          { role: 'user', content: userQuery }
-        ],
-        tools: agentTools,
-        toolChoice: 'auto',
-        stopWhen: isStepCount(5),
-      });
-
-      // Background persist (non-blocking)
-      Promise.resolve().then(async () => {
-        await appendMessage(userId, 'user', userQuery);
-        try {
-          const fullText = await toolStreamResult.text;
-          if (fullText) {
-            await appendMessage(userId, 'assistant', fullText);
-          }
-        } catch (error) {
-          log.error('Failed to persist tool assistant message', { error: (error as Error).message });
-        }
-        await maybeDispatchMemorySummarization(userId);
-      });
-
-      return toolStreamResult.toUIMessageStreamResponse();
-    }
-
-    // ── Step A: Embed Query for Semantic Cache ───────────────────────────
-    // Uses the same NvidiaClient embedding function as the RAG pipeline.
-    // This embedding is used for cache lookup; the pipeline generates
-    // its own embedding independently (preserving its internal flow).
+    // ── 3. Compute Vector Embedding ONCE (Reuse for Cache & RAG) ─────────
     let queryEmbedding: number[] | null = null;
     try {
       queryEmbedding = await getEmbedding(userQuery, 'query');
-      log.debug('Query embedded for semantic cache', {
-        dimensions: queryEmbedding.length,
-      });
     } catch (error) {
-      // Embedding failure for cache should not block the pipeline
-      log.warn('Semantic cache embedding failed, skipping cache', {
-        error: (error as Error).message,
-      });
+      log.warn('Embedding generation failed, skipping cache', { error: (error as Error).message });
     }
 
-    // ── Step B: Check Semantic Cache ─────────────────────────────────────
-    if (queryEmbedding) {
+    // ── Branch B: Semantic Cache Check (Only for RAG_KNOWLEDGE) ───────────
+    if (queryEmbedding && intent === 'RAG_KNOWLEDGE') {
       const cacheResult = await checkCache(userQuery, queryEmbedding);
-
-      // ── Step C: Cache Hit — return simulated stream immediately ────────
       if (cacheResult.hit) {
-        log.info('Semantic cache HIT — bypassing RAG pipeline', {
-          score: cacheResult.score.toFixed(4),
-          answerLength: cacheResult.answer.length,
-        });
+        log.info('Semantic cache HIT — bypassing RAG pipeline', { score: cacheResult.score.toFixed(4) });
 
-        // Split cached answer into word-boundary chunks for a natural
-        // streaming feel that matches the live LLM output cadence.
         const chunks = cacheResult.answer.split(/(\s+)/);
         const simulatedStream = simulateReadableStream({
           chunks,
@@ -229,80 +150,66 @@ If you are executing a tool and the user has not provided required parameters (l
           headers: { 'Content-Type': 'text/plain; charset=utf-8' },
         });
       }
-
-      log.debug('Semantic cache MISS — proceeding with RAG pipeline');
     }
 
-    // ── Step D: Cache Miss — Execute RAG Pipeline (Triple-Retrieval) ─────
-    // Wrap in request context so that downstream appendMessage calls
-    // in the RAG pipeline automatically receive userId + threadId.
+    // ── Branch C: Unified Agent Execution (RAG + TOOL_ACTION) ────────────
+    // Pass pre-computed embedding and client canvasState to avoid duplicate calls
     const { stream } = await runWithContext(
       { userId, threadId },
-      () => executeRAGPipeline(userQuery, chatHistory, userId, intent, subDomain, "Canvas data not yet tracked")
+      () => executeRAGPipeline(
+        userQuery, 
+        chatHistory, 
+        userId, 
+        intent, 
+        subDomain, 
+        canvasState, 
+        queryEmbedding // Reuses existing embedding!
+      )
     );
 
-    // ── Async Write: Save to Semantic Cache (non-blocking) ──────────────
-    // After the stream completes, save the query + embedding + answer to
-    // MongoDB. Uses a detached promise chain — does not delay the response.
-    if (queryEmbedding && intent === 'RAG_KNOWLEDGE') {
-      const capturedEmbedding = queryEmbedding;
-      const capturedQuery = userQuery;
-      Promise.resolve(stream.text)
-        .then((fullText: string) => {
+    // ── 4. Enterprise Serverless Background Writes (`waitUntil`) ─────────
+    // Guarantees background database persistence won't be killed on Lambda freeze
+    waitUntil(
+      (async () => {
+        try {
+          const fullText = await stream.text;
           if (fullText) {
-            return saveToCache(capturedQuery, capturedEmbedding, fullText);
-          }
-        })
-        .catch((err: Error) => {
-          log.error('Semantic cache async write failed', {
-            error: err.message,
-          });
-        });
-    }
+            await appendMessage(userId, 'user', userQuery);
+            await appendMessage(userId, 'assistant', fullText);
 
-    // ── Return Streaming Response ────────────────────────────────────────
+            // Save to semantic cache if it was a RAG search
+            if (queryEmbedding && intent === 'RAG_KNOWLEDGE') {
+              await saveToCache(userQuery, queryEmbedding, fullText);
+            }
+            await maybeDispatchMemorySummarization(userId);
+          }
+        } catch (err) {
+          log.error('Background persistence failed', { error: (err as Error).message });
+        }
+      })()
+    );
+
     return stream.toUIMessageStreamResponse();
+
   } catch (error) {
     return handleError(error);
   }
 }
 
-// ─── Error Handler ──────────────────────────────────────────────────────────
-
-/**
- * Maps application errors to appropriate HTTP responses.
- */
 function handleError(error: unknown): Response {
   if (error instanceof AppError) {
-    log.error(`${error.name}: ${error.message}`, {
-      code: error.code,
-      statusCode: error.statusCode,
+    log.error(`${error.name}: ${error.message}`, { code: error.code, statusCode: error.statusCode });
+    return new Response(JSON.stringify({ error: error.message, code: error.code }), {
+      status: error.statusCode,
+      headers: { 'Content-Type': 'application/json' },
     });
-
-    return new Response(
-      JSON.stringify({
-        error: error.message,
-        code: error.code,
-      }),
-      {
-        status: error.statusCode,
-        headers: { 'Content-Type': 'application/json' },
-      }
-    );
   }
 
-  // Unknown errors
   const err = error instanceof Error ? error : new Error(String(error));
   log.error('Unexpected error in chat route', { error: err.message, stack: err.stack });
 
-  return new Response(
-    JSON.stringify({
-      error: 'An internal server error occurred. Please try again.',
-      code: 'INTERNAL_ERROR',
-    }),
-    {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    }
-  );
+  return new Response(JSON.stringify({ error: 'An internal server error occurred.', code: 'INTERNAL_ERROR' }), {
+    status: 500,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }

@@ -23,6 +23,7 @@
     "@supabase/supabase-js": "^2.110.2",
     "@vercel/analytics": "^2.0.1",
     "@vercel/blob": "^2.6.1",
+    "@vercel/functions": "^3.7.7",
     "ai": "^7.0.18",
     "framer-motion": "^12.42.2",
     "inngest": "^4.12.0",

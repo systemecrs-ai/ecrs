@@ -12,9 +12,9 @@
  */
 
 import { useChat } from '@ai-sdk/react';
-import { useCanvas } from '@/context/CanvasContext';
+import { useCanvas, type CanvasProduct } from '@/context/CanvasContext';
 import { DefaultChatTransport } from 'ai';
-import { useRef, useEffect, useState, useCallback, type FormEvent } from 'react';
+import { useRef, useEffect, useState, useCallback, type FormEvent, useMemo } from 'react';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
 import TypingIndicator from '@/components/ui/TypingIndicator';
@@ -30,15 +30,8 @@ interface ChatInterfaceProps {
   onNewChat?: () => void;
 }
 
-/**
- * Robustly extracts text content from a UIMessage supporting both 
- * flat text streams and multi-part data payload elements.
- */
 function getMessageText(message: { content?: string; parts?: Array<{ type: string; text?: string }> }): string {
-  // Priority 1: Extract direct streaming text string accumulator
   if (message.content) return message.content;
-
-  // Priority 2: Fall back to parsing structural text tokens out of parts array
   if (!message.parts) return '';
   return message.parts
     .filter((part): part is { type: 'text'; text: string } => part.type === 'text' && typeof part.text === 'string')
@@ -46,48 +39,119 @@ function getMessageText(message: { content?: string; parts?: Array<{ type: strin
     .join('');
 }
 
+function parseCanvasToolResult(result: unknown): CanvasProduct[] | null {
+  if (typeof result !== 'object' || result === null) return null;
+  const r = result as Record<string, unknown>;
+  if (!r.success || !r.data) return null;
+  const data = r.data as Record<string, unknown>;
+  if (!Array.isArray(data.items)) return null;
+  return data.items as CanvasProduct[];
+}
+
 export default function ChatInterface({ threadId, initialMessages = [], onToggleSidebar, onNewChat }: ChatInterfaceProps) {
-  const { setCanvasView } = useCanvas();
+  // 1. PULL IN THE LOADING SETTER
+  const { setCanvasView, getCanvasSummary, setCanvasLoading } = useCanvas();
+  
   const { messages, sendMessage, status, error, setMessages } = useChat({
     id: threadId,
     transport: new DefaultChatTransport({ api: '/api/chat' }),
   });
 
-  // Listen for tool results (e.g. checkInventory, updateProductCanvas)
-  useEffect(() => {
-    if (messages.length > 0) {
-      const lastMessage = messages[messages.length - 1] as any;
-      if (lastMessage.role === 'assistant') {
-        const toolInvocations = lastMessage.toolInvocations || 
-          (lastMessage.parts && lastMessage.parts.filter((p: any) => p.type === 'tool-invocation').map((p: any) => p.toolInvocation));
-        
-        if (toolInvocations) {
-          // Check for explicit UI control tool from the LLM
-          const canvasTool = toolInvocations.find((t: any) => t.toolName === 'updateProductCanvas');
-          if (canvasTool && canvasTool.args?.items) {
-            setCanvasView('PRODUCT_RESULTS', canvasTool.args.items);
-            return;
-          }
+  const processedToolCallIds = useRef<Set<string>>(new Set());
 
-          const inventoryTool = toolInvocations.find((t: any) => t.toolName === 'checkInventory' && t.state === 'result');
-          if (inventoryTool && inventoryTool.result) {
-            const products = Array.isArray(inventoryTool.result) ? inventoryTool.result : 
-                             inventoryTool.result.items ? inventoryTool.result.items : 
-                             inventoryTool.result.products ? inventoryTool.result.products : 
-                             [inventoryTool.result];
-            setCanvasView('PRODUCT_RESULTS', products);
+  // ─── TOOL INTERCEPTION & LOADING CONTROLLER ────────────────────────────
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const lastMessage = messages[messages.length - 1];
+    
+    if (lastMessage.role !== 'assistant') return;
+
+    // A. Handle Vercel AI SDK Native Tool Calls & Loading States
+    const parts = (lastMessage as any).parts;
+    if (Array.isArray(parts)) {
+      const toolParts = parts.filter((p: any) => p.type === 'tool-invocation' && p.toolInvocation);
+      
+      for (const part of toolParts) {
+        const inv = part.toolInvocation;
+        if (inv.toolName !== 'updateProductCanvas') continue;
+
+        // Reactive Loading: Turn on spinner while streaming/fetching
+        if (inv.state === 'call' || inv.state === 'partial-call') {
+          setCanvasLoading(true);
+        } 
+        // Resolve: Turn off spinner and render data
+        else if (inv.state === 'result') {
+          setCanvasLoading(false);
+          
+          if (!processedToolCallIds.current.has(inv.toolCallId)) {
+            const items = parseCanvasToolResult(inv.result);
+            if (items) {
+              processedToolCallIds.current.add(inv.toolCallId);
+              setCanvasView('PRODUCT_RESULTS', items);
+            }
           }
         }
       }
     }
-  }, [messages, setCanvasView]);
+
+    // B. CLIENT-SIDE SELF HEALING (The XML/JSON Leakage Fallback)
+    const rawText = getMessageText(lastMessage);
+    const leakedToolMatch = rawText.match(/<tool_call>([\s\S]*?)<\/tool_call>|\{[\s\S]*?"name":\s*"updateProductCanvas"[\s\S]*?\}/);
+    
+    if (leakedToolMatch && !processedToolCallIds.current.has(lastMessage.id)) {
+      try {
+        const jsonString = leakedToolMatch[1] ? leakedToolMatch[1].trim() : leakedToolMatch[0].trim();
+        const leakedTool = JSON.parse(jsonString);
+        let parsedSkus = leakedTool.parameters?.skus || leakedTool.parameters?.SKUs;
+        
+        if (parsedSkus) {
+          if (typeof parsedSkus === 'string') parsedSkus = JSON.parse(parsedSkus);
+          
+          // Mark this message as processed so we don't spam the API
+          processedToolCallIds.current.add(lastMessage.id);
+          setCanvasLoading(true);
+          
+          // Hydrate manually via a standard Next.js route
+          fetch('/api/products/hydrate', {
+            method: 'POST',
+            body: JSON.stringify({ skus: parsedSkus })
+          })
+          .then(res => res.json())
+          .then(data => {
+            if (data.items) setCanvasView('PRODUCT_RESULTS', data.items);
+          })
+          .finally(() => setCanvasLoading(false));
+        }
+      } catch (e) {
+        console.error("Failed to heal leaked JSON", e);
+      }
+    }
+  }, [messages, setCanvasView, setCanvasLoading]);
+
+  // ─── VISUAL CLEANUP (Hiding leaked JSON) ──────────────────────────────
+  const cleanedMessages = useMemo(() => {
+    return messages.map(msg => {
+      if (msg.role === 'assistant') {
+        let cleanContent = getMessageText(msg).replace(/<tool_call>[\s\S]*?<\/tool_call>|\{[\s\S]*?"name":\s*"updateProductCanvas"[\s\S]*?\}/g, '');
+        
+        // C. THE EMPTY BUBBLE FIX: Extract summary if content is empty
+        if (!cleanContent.trim()) {
+          const parts = (msg as any).parts || [];
+          const canvasTool = parts.find((p: any) => p.type === 'tool-invocation' && p.toolInvocation?.toolName === 'updateProductCanvas');
+          if (canvasTool?.toolInvocation?.args?.summary) {
+            cleanContent = canvasTool.toolInvocation.args.summary;
+          }
+        }
+        
+        return { ...msg, content: cleanContent.trim() };
+      }
+      return msg;
+    });
+  }, [messages]);
 
   useEffect(() => {
-    if (initialMessages && initialMessages.length > 0) {
-      setMessages(initialMessages);
-    } else {
-      setMessages([]);
-    }
+    if (initialMessages && initialMessages.length > 0) setMessages(initialMessages);
+    else setMessages([]);
   }, [threadId, initialMessages, setMessages]);
 
   const [inputValue, setInputValue] = useState('');
@@ -96,40 +160,34 @@ export default function ChatInterface({ threadId, initialMessages = [], onToggle
   const isLoading = status === 'submitted' || status === 'streaming';
   const isSubmitted = status === 'submitted';
 
-  // Auto-scroll to bottom on new messages
   useEffect(() => {
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
     }
   }, [messages, status]);
 
-  // Handle form submission
   const handleSubmit = useCallback(
     (e: FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       const trimmed = inputValue.trim();
       if (!trimmed || isLoading) return;
-      sendMessage({ text: trimmed }, { body: { threadId } });
+      sendMessage({ text: trimmed }, { body: { threadId, canvasState: getCanvasSummary() } });
       setInputValue('');
     },
-    [inputValue, isLoading, sendMessage, threadId]
+    [inputValue, isLoading, sendMessage, threadId, getCanvasSummary]
   );
 
-  // Handle suggestion chip click
   const handleSuggestionClick = useCallback(
     (query: string) => {
       if (isLoading) return;
-      sendMessage({ text: query }, { body: { threadId } });
+      sendMessage({ text: query }, { body: { threadId, canvasState: getCanvasSummary() } });
     },
-    [isLoading, sendMessage, threadId]
+    [isLoading, sendMessage, threadId, getCanvasSummary]
   );
 
   const handleClearChat = useCallback(() => {
-    if (onNewChat) {
-      onNewChat();
-    } else {
-      setMessages([]);
-    }
+    if (onNewChat) onNewChat();
+    else setMessages([]);
   }, [onNewChat, setMessages]);
 
   const hasMessages = messages.length > 0;
@@ -204,9 +262,9 @@ export default function ChatInterface({ threadId, initialMessages = [], onToggle
             </div>
           </div>
         ) : (
-          /* ── Messages List ──────────────────────────────────────── */
           <div className="flex flex-col py-6">
-            {messages.map((message: any) => {
+            {/* MAP OVER cleanedMessages INSTEAD OF messages */}
+            {cleanedMessages.map((message: any) => {
               const toolInvocations = message.parts 
                 ? message.parts.filter((p: any) => p.type === 'tool-invocation').map((p: any) => p.toolInvocation)
                 : message.toolInvocations;
@@ -215,30 +273,31 @@ export default function ChatInterface({ threadId, initialMessages = [], onToggle
                 <MessageBubble
                   key={message.id}
                   role={message.role as 'user' | 'assistant'}
-                  content={getMessageText(message)}
+                  // message.content is now guaranteed to either have text OR the tool summary!
+                  content={message.content || getMessageText(message)}
                   toolInvocations={toolInvocations}
-                onConfirmAction={(payload) => {
-                  sendMessage(
-                    { text: `Confirmed action for ${payload.toolName}. Please proceed using confirmed: true.` },
-                    { body: { threadId } }
-                  );
-                }}
-                onCancelAction={(payload) => {
-                  sendMessage(
-                    { text: `User cancelled action for ${payload.toolName}. Do not proceed.` },
-                    { body: { threadId } }
-                  );
-                }}
-              />
+                  onConfirmAction={(payload) => {
+                    sendMessage(
+                      { text: `Confirmed action for ${payload.toolName}. Please proceed using confirmed: true.` },
+                      { body: { threadId } }
+                    );
+                  }}
+                  onCancelAction={(payload) => {
+                    sendMessage(
+                      { text: `User cancelled action for ${payload.toolName}. Do not proceed.` },
+                      { body: { threadId } }
+                    );
+                  }}
+                />
               );
             })}
 
-            {/* Retrieval indicator — shows during query processing */}
+            {/* Retrieval indicator */}
             <div className="px-4">
               <RetrievalIndicator isActive={isSubmitted} />
             </div>
 
-            {/* Typing indicator while streaming */}
+            {/* Typing indicator */}
             <div className="px-4">
               {isLoading && !isSubmitted && <TypingIndicator />}
             </div>
@@ -247,14 +306,13 @@ export default function ChatInterface({ threadId, initialMessages = [], onToggle
             {error && (
               <div className="mx-4 my-2 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-300/80">
                 <p className="font-medium">Something went wrong</p>
-                <p className="mt-1 text-red-300/60">{error.message || 'Failed to get a response. Please try again.'}</p>
+                <p className="mt-1 text-red-300/60">{error.message || 'Failed to get a response.'}</p>
               </div>
             )}
           </div>
         )}
       </div>
 
-      {/* Input Area */}
       <ChatInput
         value={inputValue}
         onChange={(e) => setInputValue(e.target.value)}

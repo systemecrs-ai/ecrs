@@ -3,20 +3,10 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, CheckCircle2, XCircle } from 'lucide-react';
-
-interface Product {
-  sku?: string;
-  name: string;
-  brand: string;
-  price: number;
-  currency?: string;
-  inStock: boolean;
-  imageUrl?: string;
-  description?: string;
-}
+import type { CanvasProduct } from '@/context/CanvasContext';
 
 interface ProductResultsCanvasProps {
-  products: Product[];
+  products: CanvasProduct[];
   onBack: () => void;
 }
 

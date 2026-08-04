@@ -177,19 +177,50 @@ export const agentTools = {
   } as any),
 
   updateProductCanvas: tool({
-    description: 'Updates the UI canvas with a curated list of products to display to the user.',
+    description: 'Displays products on the user interface. You MUST pass an array of string SKUs and a brief 1-sentence summary of why you chose these items. Example payload: {"skus": ["SKU-123", "SKU-456"], "summary": "These are the best selling jeans."}. DO NOT pass functions, code, or full product details.',
     parameters: z.object({
-      items: z.array(z.object({
-        sku: z.string(),
-        name: z.string(),
-        price: z.coerce.number(),
-        description: z.string(),
-        imageUrl: z.string().optional()
-      })).describe("The curated list of products to display on the user's canvas.")
-    }),
-    execute: async (args: any, options: any) => {
-      // The actual UI update happens on the client via tool interception.
-      return { success: true, message: 'Canvas updated successfully with the curated products.' } as AgentToolResult<any>;
+      skus: z.array(z.string()).describe('An array of exact string SKUs. Example: ["SKU-PNT-003", "SKU-PNT-002"]'),
+      summary: z.string().optional().describe("A brief 1-sentence summary of why you chose these items.")
+    }).strict(),
+    execute: async (args: { skus: string[], summary?: string }, options: any) => {
+      const start = Date.now();
+      try {
+        if (!args.skus || args.skus.length === 0) {
+          return { success: false, message: 'No SKUs provided to display.' } as AgentToolResult<any>;
+        }
+
+        // 2. Hydrate the full product data on the backend
+        const db = await getDatabase();
+        const products = await db.collection(UNIFIED_NODES_COLLECTION)
+          .find({ 
+            type: 'product', 
+            sku: { $in: args.skus } 
+          })
+          .toArray();
+
+        // 3. Return the rich data array. Vercel AI SDK will automatically 
+        // stream this `data` object directly to your frontend client!
+        return { 
+          success: true, 
+          executionTimeMs: Date.now() - start,
+          hitlRequired: false,
+          data: {
+            items: products.map(p => ({
+              sku: p.sku,
+              name: p.name,
+              price: p.price,
+              description: p.description,
+              imageUrl: p.imageUrl, // Automatically fetched from DB!
+              inStock: p.inStock
+            })),
+            summary: args.summary
+          }
+        } as AgentToolResult<any>;
+
+      } catch (error: any) {
+        log.error('Canvas tool execution error', { error });
+        return { success: false, message: 'Failed to load products for the canvas.' } as AgentToolResult<any>;
+      }
     }
   } as any)
 };
