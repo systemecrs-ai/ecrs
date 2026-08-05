@@ -16,12 +16,19 @@ interface MessageBubbleProps {
   role: 'user' | 'assistant';
   content: string;
   toolInvocations?: any[];
+  /** True when any tool invocation is in partial-call or call state */
+  isPendingTool?: boolean;
   onConfirmAction?: (payload: any) => void;
   onCancelAction?: (payload: any) => void;
 }
 
-export default function MessageBubble({ role, content, toolInvocations, onConfirmAction, onCancelAction }: MessageBubbleProps) {
+export default function MessageBubble({ role, content, toolInvocations, isPendingTool = false, onConfirmAction, onCancelAction }: MessageBubbleProps) {
   const isUser = role === 'user';
+
+  // Genuinely empty: no text content AND no tool invocations → render nothing
+  if (!content && (!toolInvocations || toolInvocations.length === 0)) {
+    return null;
+  }
 
   // Basic markdown-to-HTML for assistant messages
   const formattedContent = useMemo(() => {
@@ -62,10 +69,27 @@ export default function MessageBubble({ role, content, toolInvocations, onConfir
           ) : (
             <div className="flex flex-col gap-3">
               {content && (
-                <div
-                  className="prose-chat text-sm leading-relaxed"
-                  dangerouslySetInnerHTML={{ __html: formattedContent }}
-                />
+                <div className="flex items-start gap-2">
+                  {/* Tool-Intent Pulsing Indicator */}
+                  {isPendingTool && (
+                    <div className="mt-1.5 flex shrink-0 items-center gap-1.5">
+                      <div className="h-2 w-2 rounded-full bg-indigo-400 animate-tool-pulse" />
+                    </div>
+                  )}
+                  <div
+                    className={`prose-chat text-sm leading-relaxed flex-1 ${
+                      isPendingTool ? 'text-white/70' : ''
+                    }`}
+                    dangerouslySetInnerHTML={{ __html: formattedContent }}
+                  />
+                </div>
+              )}
+
+              {/* Shimmer bar for active tool streaming */}
+              {isPendingTool && (
+                <div className="h-1 w-full rounded-full overflow-hidden bg-white/[0.04]">
+                  <div className="h-full w-1/2 rounded-full bg-gradient-to-r from-indigo-500/60 via-violet-500/60 to-indigo-500/60 animate-shimmer" />
+                </div>
               )}
 
               {/* Tool Invocations Rendering */}

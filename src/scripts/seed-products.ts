@@ -7,7 +7,7 @@ dotenv.config({ path: '.env' });
 
 const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.MONGODB_DB || 'ecrs_apparel';
-const COLLECTION_NAME = 'products';
+const COLLECTION_NAME = 'unified_nodes';
 
 if (!MONGODB_URI) {
   console.error('❌ MONGODB_URI is not defined in your environment variables.');
@@ -19,7 +19,7 @@ function generatePlaceholderEmbedding(): number[] {
   return Array.from({ length: 2048 }, () => Math.random() * 2 - 1);
 }
 
-const mockProducts = [
+export const mockProducts = [
   // --- T-SHIRTS & TOPS ---
   {
     sku: 'SKU-TEE-001',
@@ -35,8 +35,9 @@ const mockProducts = [
     rating: 4.8,
     reviewCount: 342,
     embedding: generatePlaceholderEmbedding(),
+    type : "product",
     description: 'A timeless, comfortable crew neck t-shirt made from organic cotton.',
-    imageUrl: 'https://example.com/images/crew-tshirt.jpg',
+    imageUrl: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=800&q=80',
     tags: ['casual', 'summer', 'basics', 'crewneck'],
   },
   {
@@ -53,8 +54,9 @@ const mockProducts = [
     rating: 4.6,
     reviewCount: 198,
     embedding: generatePlaceholderEmbedding(),
+    type : "product",
     description: 'Ultra-soft relaxed fit V-neck tee crafted from premium long-staple cotton.',
-    imageUrl: 'https://example.com/images/vneck-tshirt.jpg',
+    imageUrl: 'https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?auto=format&fit=crop&w=800&q=80',
     tags: ['casual', 'basics', 'vneck'],
   },
   
@@ -73,8 +75,9 @@ const mockProducts = [
     rating: 4.5,
     reviewCount: 890,
     embedding: generatePlaceholderEmbedding(),
+    type : "product",
     description: 'Lightweight, moisture-wicking joggers perfect for training or lounging.',
-    imageUrl: 'https://example.com/images/joggers.jpg',
+    imageUrl: 'https://images.unsplash.com/photo-1552902865-b72c031ac5ea?auto=format&fit=crop&w=800&q=80',
     tags: ['athletic', 'workout', 'lounge', 'dri-fit'],
   },
   {
@@ -91,8 +94,9 @@ const mockProducts = [
     rating: 4.7,
     reviewCount: 1250,
     embedding: generatePlaceholderEmbedding(),
+    type : "product",
     description: 'Flattering high-rise jeans with a perfect amount of stretch.',
-    imageUrl: 'https://example.com/images/skinny-jeans.jpg',
+    imageUrl: 'https://images.unsplash.com/photo-1541099649105-f69ad21f3246?auto=format&fit=crop&w=800&q=80',
     tags: ['denim', 'casual', 'everyday', 'skinny'],
   },
   {
@@ -109,8 +113,9 @@ const mockProducts = [
     rating: 4.4,
     reviewCount: 3110,
     embedding: generatePlaceholderEmbedding(),
+    type : "product",
     description: 'The historic classic straight leg jean with signature button fly.',
-    imageUrl: 'https://example.com/images/501-straight.jpg',
+    imageUrl: 'https://vrfbakltqaupsrrjhrht.supabase.co/storage/v1/object/public/Products/501%20Original%20Fit%20Straight%20Jeans.jpg',
     tags: ['denim', 'classic', 'vintage'],
   },
 
@@ -129,8 +134,9 @@ const mockProducts = [
     rating: 4.9,
     reviewCount: 512,
     embedding: generatePlaceholderEmbedding(),
+    type : "product",
     description: 'Extra fine merino wool sweater, ideal for layering.',
-    imageUrl: 'https://example.com/images/merino-sweater.jpg',
+    imageUrl: 'https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?auto=format&fit=crop&w=800&q=80',
     tags: ['winter', 'layering', 'formal', 'wool'],
   },
   {
@@ -147,8 +153,9 @@ const mockProducts = [
     rating: 4.9,
     reviewCount: 156,
     embedding: generatePlaceholderEmbedding(),
+    type : "product",
     description: 'Iconic waterproof trench coat with vintage plaid heritage detailing.',
-    imageUrl: 'https://example.com/images/trench-coat.jpg',
+    imageUrl: 'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?auto=format&fit=crop&w=800&q=80',
     tags: ['luxury', 'rain', 'outerwear', 'trench'],
   },
   {
@@ -165,8 +172,9 @@ const mockProducts = [
     rating: 4.8,
     reviewCount: 945,
     embedding: generatePlaceholderEmbedding(),
+    type : "product",
     description: 'Ultra-warm winter puffer coat filled with 700-fill goose down insulation.',
-    imageUrl: 'https://example.com/images/puffer.jpg',
+    imageUrl: 'https://vrfbakltqaupsrrjhrht.supabase.co/storage/v1/object/public/Products/Down-Insulated%20Puffer%20Jacket.jpg',
     tags: ['winter', 'heavy', 'outdoor', 'cold'],
   },
 
@@ -185,8 +193,9 @@ const mockProducts = [
     rating: 4.9,
     reviewCount: 4210,
     embedding: generatePlaceholderEmbedding(),
+    type : "product",
     description: 'Butter-soft weightless yoga pants engineered to feel like a second skin.',
-    imageUrl: 'https://example.com/images/align-leggings.jpg',
+    imageUrl: 'https://images.unsplash.com/photo-1518310383802-640c2de311b2?auto=format&fit=crop&w=800&q=80',
     tags: ['yoga', 'workout', 'athleisure', 'soft'],
   },
   {
@@ -203,8 +212,9 @@ const mockProducts = [
     rating: 4.5,
     reviewCount: 612,
     embedding: generatePlaceholderEmbedding(),
+    type : "product",
     description: 'Lightweight running and training shorts featuring sweat-wicking multi-way stretch.',
-    imageUrl: 'https://example.com/images/pace-breaker.jpg',
+    imageUrl: 'https://vrfbakltqaupsrrjhrht.supabase.co/storage/v1/object/public/Products/Pace%20Breaker%20Athletic%20Shorts.jpg',
     tags: ['running', 'gym', 'shorts', 'breathable'],
   },
 
@@ -223,14 +233,15 @@ const mockProducts = [
     rating: 4.7,
     reviewCount: 2340,
     embedding: generatePlaceholderEmbedding(),
+    type : "product",
     description: 'Classic retro running shoe design with visible Air cushioning unit inside heel.',
-    imageUrl: 'https://example.com/images/airmax90.jpg',
+    imageUrl: 'https://images.unsplash.com/photo-1606107557195-0e29a4b5b4aa?auto=format&fit=crop&w=800&q=80',
     tags: ['sneakers', 'streetwear', 'retro', 'cushion'],
   },
   {
     sku: 'SKU-FTR-002',
     name: 'Stan Smith Sustainable Shoes',
-    brand: 'Adidas',
+    brand: 'Puma',
     price: 100.00,
     currency: 'USD',
     category: 'Footwear',
@@ -241,49 +252,13 @@ const mockProducts = [
     rating: 4.4,
     reviewCount: 1890,
     embedding: generatePlaceholderEmbedding(),
+    type : "product",
     description: 'Minimalist clean white tennis sneaker finished with iconic green heel tab accents.',
-    imageUrl: 'https://example.com/images/stansmith.jpg',
+    imageUrl: 'https://images.unsplash.com/photo-1608231387042-66d1773070a5?auto=format&fit=crop&w=800&q=80',
     tags: ['sneakers', 'minimalist', 'classic', 'white'],
   },
-
-  // --- DRESSES & FORMAL ---
-  {
-    sku: 'SKU-DRS-001',
-    name: 'Linen Blend Summer Midi Dress',
-    brand: 'Reformations',
-    price: 248.00,
-    currency: 'USD',
-    category: 'Apparel',
-    subcategory: 'Dresses',
-    gender: 'Women',
-    material: 'Linen Flax Blend',
-    inStock: true,
-    rating: 4.6,
-    reviewCount: 89,
-    embedding: generatePlaceholderEmbedding(),
-    description: 'Breathable lightweight midi dress featuring side slits and a sweetheart neckline.',
-    imageUrl: 'https://example.com/images/midi-dress.jpg',
-    tags: ['summer', 'dress', 'linen', 'formal'],
-  },
-  {
-    sku: 'SKU-DRS-002',
-    name: 'Slim Fit Oxford Cotton Dress Shirt',
-    brand: 'Burberry',
-    price: 450.00,
-    currency: 'USD',
-    category: 'Apparel',
-    subcategory: 'Shirts',
-    gender: 'Men',
-    material: '100% Oxford Cotton',
-    inStock: true,
-    rating: 4.8,
-    reviewCount: 74,
-    embedding: generatePlaceholderEmbedding(),
-    description: 'Tailored formal luxury long sleeve dress shirt with signature check cuff lining.',
-    imageUrl: 'https://example.com/images/oxford-shirt.jpg',
-    tags: ['formal', 'luxury', 'buttondown', 'shirt'],
-  }
 ];
+
 
 async function seedProducts() {
   console.log('🚀 Connecting to MongoDB Atlas...');

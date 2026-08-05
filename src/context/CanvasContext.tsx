@@ -55,9 +55,9 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
     setState({ activeView: view, viewData: data, isLoading: loading });
   }, []);
 
-  const setCanvasLoading = (loading: boolean) => {
-  setState(prev => ({ ...prev, isLoading: loading }));
-};
+  const setCanvasLoading = useCallback((loading: boolean) => {
+    setState(prev => ({ ...prev, isLoading: loading }));
+  }, []);
 
   /**
    * Serializes the current canvas view into a lightweight string

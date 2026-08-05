@@ -182,45 +182,67 @@ export const agentTools = {
       skus: z.array(z.string()).describe('An array of exact string SKUs. Example: ["SKU-PNT-003", "SKU-PNT-002"]'),
       summary: z.string().optional().describe("A brief 1-sentence summary of why you chose these items.")
     }).strict(),
-    execute: async (args: { skus: string[], summary?: string }, options: any) => {
-      const start = Date.now();
+    execute: async (args: { skus: any, summary?: string }, options: any) => {
+  const start = Date.now();
+  try {
+    // 1. DEFENSIVE PARSING: Guarantee an Array at Runtime
+    let safeSkus = args.skus;
+    
+    // If the SDK passed a stringified JSON array
+    if (typeof safeSkus === 'string') {
       try {
-        if (!args.skus || args.skus.length === 0) {
-          return { success: false, message: 'No SKUs provided to display.' } as AgentToolResult<any>;
-        }
-
-        // 2. Hydrate the full product data on the backend
-        const db = await getDatabase();
-        const products = await db.collection(UNIFIED_NODES_COLLECTION)
-          .find({ 
-            type: 'product', 
-            sku: { $in: args.skus } 
-          })
-          .toArray();
-
-        // 3. Return the rich data array. Vercel AI SDK will automatically 
-        // stream this `data` object directly to your frontend client!
-        return { 
-          success: true, 
-          executionTimeMs: Date.now() - start,
-          hitlRequired: false,
-          data: {
-            items: products.map(p => ({
-              sku: p.sku,
-              name: p.name,
-              price: p.price,
-              description: p.description,
-              imageUrl: p.imageUrl, // Automatically fetched from DB!
-              inStock: p.inStock
-            })),
-            summary: args.summary
-          }
-        } as AgentToolResult<any>;
-
-      } catch (error: any) {
-        log.error('Canvas tool execution error', { error });
-        return { success: false, message: 'Failed to load products for the canvas.' } as AgentToolResult<any>;
+        safeSkus = JSON.parse(safeSkus);
+      } catch (e) {
+        // If it fails to parse, treat the entire string as a single SKU
+        safeSkus = [safeSkus]; 
       }
     }
+
+    // If it's still not an array (e.g., just an object or a raw string), wrap it
+    if (!Array.isArray(safeSkus)) {
+      safeSkus = [safeSkus];
+    }
+
+    // Final safety check
+    if (!safeSkus || safeSkus.length === 0 || !safeSkus[0]) {
+      return { success: false, message: 'No valid SKUs extracted to display.' } as AgentToolResult<any>;
+    }
+
+    // 2. Hydrate the full product data on the backend
+    const db = await getDatabase();
+    const products = await db.collection(UNIFIED_NODES_COLLECTION)
+      .find({ 
+        type: 'product', 
+        sku: { $in: safeSkus } // Passing the mathematically guaranteed array
+      })
+      .toArray();
+
+    // 3. Return the rich data array
+    return { 
+      success: true, 
+      executionTimeMs: Date.now() - start,
+      hitlRequired: false,
+      data: {
+        items: products.map(p => ({
+          sku: p.sku,
+          name: p.name,
+          price: p.price,
+          description: p.description,
+          imageUrl: p.imageUrl,
+          inStock: p.inStock
+        })),
+        summary: args.summary
+      }
+    } as AgentToolResult<any>;
+
+  } catch (error: any) {
+    log.error('Canvas tool execution error', { 
+      error: error.message,
+      stack: error.stack, 
+      receivedArgs: args 
+    });
+    return { success: false, message: `System error: ${error.message}` } as AgentToolResult<any>;
+  }
+}
   } as any)
 };

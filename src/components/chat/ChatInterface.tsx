@@ -63,90 +63,113 @@ export default function ChatInterface({ threadId, initialMessages = [], onToggle
   useEffect(() => {
     if (messages.length === 0) return;
     const lastMessage = messages[messages.length - 1];
-    
     if (lastMessage.role !== 'assistant') return;
 
-    // A. Handle Vercel AI SDK Native Tool Calls & Loading States
-    const parts = (lastMessage as any).parts;
-    if (Array.isArray(parts)) {
-      const toolParts = parts.filter((p: any) => p.type === 'tool-invocation' && p.toolInvocation);
-      
-      for (const part of toolParts) {
-        const inv = part.toolInvocation;
-        if (inv.toolName !== 'updateProductCanvas') continue;
-
-        // Reactive Loading: Turn on spinner while streaming/fetching
-        if (inv.state === 'call' || inv.state === 'partial-call') {
-          setCanvasLoading(true);
-        } 
-        // Resolve: Turn off spinner and render data
-        else if (inv.state === 'result') {
-          setCanvasLoading(false);
-          
-          if (!processedToolCallIds.current.has(inv.toolCallId)) {
-            const items = parseCanvasToolResult(inv.result);
-            if (items) {
-              processedToolCallIds.current.add(inv.toolCallId);
-              setCanvasView('PRODUCT_RESULTS', items);
-            }
-          }
+    // 🛠️ UNIVERSAL ADAPTER (Same as above)
+    const activeTools: any[] = [];
+    if ((lastMessage as any).toolInvocations) activeTools.push(...(lastMessage as any).toolInvocations);
+    
+    if ((lastMessage as any).parts) {
+      for (const p of (lastMessage as any).parts) {
+        if (p.type === 'tool-invocation' && p.toolInvocation) {
+          activeTools.push(p.toolInvocation);
+        } else if (p.toolCallId && p.type && p.type.startsWith('tool-')) {
+          activeTools.push({
+            toolCallId: p.toolCallId,
+            toolName: p.toolName || p.type.replace('tool-', ''),
+            state: p.state || (p.output ? 'result' : 'input-streaming'),
+            args: p.input || p.args || {},
+            result: p.output || p.result
+          });
         }
       }
     }
 
-    // B. CLIENT-SIDE SELF HEALING (The XML/JSON Leakage Fallback)
-    const rawText = getMessageText(lastMessage);
-    const leakedToolMatch = rawText.match(/<tool_call>([\s\S]*?)<\/tool_call>|\{[\s\S]*?"name":\s*"updateProductCanvas"[\s\S]*?\}/);
-    
-    if (leakedToolMatch && !processedToolCallIds.current.has(lastMessage.id)) {
-      try {
-        const jsonString = leakedToolMatch[1] ? leakedToolMatch[1].trim() : leakedToolMatch[0].trim();
-        const leakedTool = JSON.parse(jsonString);
-        let parsedSkus = leakedTool.parameters?.skus || leakedTool.parameters?.SKUs;
-        
-        if (parsedSkus) {
-          if (typeof parsedSkus === 'string') parsedSkus = JSON.parse(parsedSkus);
-          
-          // Mark this message as processed so we don't spam the API
-          processedToolCallIds.current.add(lastMessage.id);
-          setCanvasLoading(true);
-          
-          // Hydrate manually via a standard Next.js route
-          fetch('/api/products/hydrate', {
-            method: 'POST',
-            body: JSON.stringify({ skus: parsedSkus })
-          })
-          .then(res => res.json())
-          .then(data => {
-            if (data.items) setCanvasView('PRODUCT_RESULTS', data.items);
-          })
-          .finally(() => setCanvasLoading(false));
+    for (const inv of activeTools) {
+      if (!inv || inv.toolName !== 'updateProductCanvas') continue;
+
+      // Check for your specific 'input-streaming' state!
+      if (inv.state === 'call' || inv.state === 'partial-call' || inv.state === 'input-streaming') {
+        setCanvasLoading(true);
+      } 
+      else if (inv.state === 'result' || inv.result) {
+        setCanvasLoading(false);
+        if (!processedToolCallIds.current.has(inv.toolCallId)) {
+          const items = parseCanvasToolResult(inv.result);
+          if (items) {
+            processedToolCallIds.current.add(inv.toolCallId);
+            setCanvasView('PRODUCT_RESULTS', items);
+          }
         }
-      } catch (e) {
-        console.error("Failed to heal leaked JSON", e);
       }
     }
   }, [messages, setCanvasView, setCanvasLoading]);
 
-  // ─── VISUAL CLEANUP (Hiding leaked JSON) ──────────────────────────────
+  // ─── VISUAL CLEANUP & DISPLAY STATE PRE-PROCESSING ─────────────────────
+  // ─── VISUAL CLEANUP & DISPLAY STATE PRE-PROCESSING ─────────────────────
   const cleanedMessages = useMemo(() => {
-    return messages.map(msg => {
-      if (msg.role === 'assistant') {
-        let cleanContent = getMessageText(msg).replace(/<tool_call>[\s\S]*?<\/tool_call>|\{[\s\S]*?"name":\s*"updateProductCanvas"[\s\S]*?\}/g, '');
-        
-        // C. THE EMPTY BUBBLE FIX: Extract summary if content is empty
-        if (!cleanContent.trim()) {
-          const parts = (msg as any).parts || [];
-          const canvasTool = parts.find((p: any) => p.type === 'tool-invocation' && p.toolInvocation?.toolName === 'updateProductCanvas');
-          if (canvasTool?.toolInvocation?.args?.summary) {
-            cleanContent = canvasTool.toolInvocation.args.summary;
+    return messages
+      .map(msg => {
+        if (msg.role === 'assistant') {
+          let cleanContent = getMessageText(msg).replace(
+            /<tool_call>[\s\S]*?<\/tool_call>|\{[\s\S]*?"name":\s*"updateProductCanvas"[\s\S]*?\}/g,
+            ''
+          );
+
+          // 🛠️ UNIVERSAL ADAPTER: Catch EVERY version of Vercel AI SDK tool shapes
+          const activeTools: any[] = [];
+          
+          if ((msg as any).toolInvocations) activeTools.push(...(msg as any).toolInvocations);
+          
+          if ((msg as any).parts) {
+            for (const p of (msg as any).parts) {
+              // Standard format
+              if (p.type === 'tool-invocation' && p.toolInvocation) {
+                activeTools.push(p.toolInvocation);
+              } 
+              // YOUR EXACT LOG FORMAT
+              else if (p.toolCallId && p.type && p.type.startsWith('tool-')) {
+                activeTools.push({
+                  toolCallId: p.toolCallId,
+                  toolName: p.toolName || p.type.replace('tool-', ''), // Extracts 'updateProductCanvas'
+                  state: p.state || (p.output ? 'result' : 'input-streaming'), // Maps your state
+                  args: p.input || p.args || {}, // Maps 'input' -> 'args'
+                  result: p.output || p.result // Maps 'output' -> 'result'
+                });
+              }
+            }
           }
+
+          const canvasTool = activeTools.find((t: any) => t && t.toolName === 'updateProductCanvas');
+          
+          // Updated to check your specific 'input-streaming' state
+          const isPendingTool = activeTools.some((t: any) => t && (t.state === 'partial-call' || t.state === 'call' || t.state === 'input-streaming'));
+
+          // THE EMPTY BUBBLE FIX
+          if (!cleanContent.trim() && canvasTool) {
+            if (canvasTool.state === 'partial-call' || canvasTool.state === 'call' || canvasTool.state === 'input-streaming') {
+              cleanContent = canvasTool.args?.summary || 'Curating recommendations...';
+            } else if (canvasTool.state === 'result' || canvasTool.result) {
+              cleanContent = canvasTool.args?.summary || canvasTool.result?.data?.summary || 'Here are your recommendations!';
+            }
+          }
+
+          const finalContent = cleanContent.trim();
+
+          if (!finalContent && activeTools.length === 0) {
+            return null; 
+          }
+
+          return { 
+            ...msg, 
+            content: finalContent, 
+            _isPendingTool: isPendingTool,
+            _safeTools: activeTools 
+          };
         }
-        
-        return { ...msg, content: cleanContent.trim() };
-      }
-      return msg;
-    });
+        return msg;
+      })
+      .filter(Boolean);
   }, [messages]);
 
   useEffect(() => {
@@ -273,9 +296,9 @@ export default function ChatInterface({ threadId, initialMessages = [], onToggle
                 <MessageBubble
                   key={message.id}
                   role={message.role as 'user' | 'assistant'}
-                  // message.content is now guaranteed to either have text OR the tool summary!
                   content={message.content || getMessageText(message)}
                   toolInvocations={toolInvocations}
+                  isPendingTool={!!message._isPendingTool}
                   onConfirmAction={(payload) => {
                     sendMessage(
                       { text: `Confirmed action for ${payload.toolName}. Please proceed using confirmed: true.` },
