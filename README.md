@@ -9,6 +9,12 @@
 
 CartContext is a polymorphic Retrieval-Augmented Generation (RAG) engine built to serve as an intelligent apparel shopping assistant at scale. The system processes heavy document payloads (15MB+) and complex multi-modal queries while maintaining strict tenant data isolation. By leveraging multi-tiered retrieval, semantic caching, and asynchronous background pipelines, CartContext guarantees extremely low-latency streaming responses without compromising on reasoning depth.
 
+## Key Features
+- **Zero-Hallucination RAG Pipeline**: Multi-tiered semantic retrieval with Cohere reranking.
+- **Agentic Cart Mutations (Optimistic UI)**: Real-time, defensively parsed tool execution seamlessly integrated with global cart state.
+- **Two-Tier Semantic Caching**: Sub-1.2s TTFT with TTL-pruned MongoDB caching and LLM verification.
+- **Async Document Ingestion**: Inngest-powered durable background jobs for structural extraction and embedding.
+
 ## The Engineering Challenges & Solutions
 
 ### The Timeout Problem: Handling Heavy Payloads in Serverless Environments

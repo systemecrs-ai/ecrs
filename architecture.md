@@ -65,6 +65,13 @@ These searches execute concurrently via `Promise.all` to minimize latency.
    - **Human-in-the-Loop (HITL)**: For write/action tools like `reserveItemInStore`, the backend safely halts database mutations unless an explicit `confirmed: true` flag is received. It returns a `hitlRequired` payload to the client.
    - **Tool Observability & UI Rendering**: The client application dynamically renders loading indicators for active tools and an interactive Confirmation Card for HITL events. User approvals send a callback to the API route, seamlessly resuming the ReAct loop.
 
+### Agentic Tools: The addToCart Flow
+The conversational commerce AI uses the `addToCart` tool to seamlessly integrate chat intent with the user's shopping cart:
+1. **LLM Intent**: The ReAct engine identifies the user's intent to add a product (e.g. "Add this to my cart") and initiates the `addToCart` tool call with parameters (`sku`, `quantity`, `size`, `variant`).
+2. **Tool Execution**: The backend executes the tool defensively, returning a success payload indicating the item is added.
+3. **Frontend Interception**: The Universal Tool Adapter in `ChatInterface.tsx` intercepts the tool state. While `input-streaming`, it renders an optimistic UI ("Adding item to cart...").
+4. **Cart State Update**: Once the tool reaches the `result` state, the frontend dispatches the returned item directly to the global Cart Context, instantly updating the user's cart icon and rendering an elegant success pill in the chat bubble.
+
 ### Phase 6: Asynchronous Operations (Background Jobs)
 Once the streaming response is initiated, the system detaches asynchronous background operations (fire-and-forget) to ensure zero impact on user latency:
 - **Cache Writing**: Upon completion, the new query, embedding, and generated text are stored in the `semantic_cache`.
