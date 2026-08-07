@@ -136,21 +136,6 @@ export async function executeRAGPipeline(
 
   log.info('RAG pipeline stages completed', { duration: Date.now() - startTime });
 
-  // ── Stage 5: Background Persistence (Serverless Safe) ───────────────────
-  if (userId) {
-    waitUntil(
-      (async () => {
-        await appendMessage(userId, 'user', userQuery);
-        try {
-          const fullText = await result.text;
-          if (fullText) await appendMessage(userId, 'assistant', fullText);
-        } catch (error) {
-          log.error('Failed to persist assistant message', { error: (error as Error).message });
-        }
-        await maybeDispatchMemorySummarization(userId);
-      })()
-    );
-  }
-
+  
   return { stream: result, context: ragContext };
 }

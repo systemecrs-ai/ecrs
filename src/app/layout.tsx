@@ -38,6 +38,8 @@ export const metadata: Metadata = {
   },
 };
 
+import { CartProvider } from '@/context/CartContext';
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -49,7 +51,9 @@ export default function RootLayout({
       className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-black text-white">
-        {children}
+        <CartProvider>
+          {children}
+        </CartProvider>
       </body>
     </html>
   );

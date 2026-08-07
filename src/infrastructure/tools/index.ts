@@ -244,5 +244,47 @@ export const agentTools = {
     return { success: false, message: `System error: ${error.message}` } as AgentToolResult<any>;
   }
 }
+  } as any),
+
+  addToCart: tool({
+    description: 'Adds an item to the user\'s shopping cart. MUST include a brief conversational summary.',
+    parameters: z.object({
+      sku: z.string().describe('The SKU of the product to add to the cart'),
+      quantity: z.number().default(1).describe('The number of items to add'),
+      size: z.string().optional().describe('The selected size, if applicable'),
+      variant: z.string().optional().describe('The selected variant or color, if applicable'),
+      summary: z.string().optional().describe('A brief, friendly 1-sentence confirmation message (e.g., "I\'ve added the Levi 501s in size Medium to your cart!")')
+    }),
+    execute: async (args: { sku: string; quantity?: number; size?: string; variant?: string; summary?: string }, options: any) => {
+      const start = Date.now();
+      try {
+        const { sku, quantity = 1, size, variant, summary } = args;
+        
+        if (!sku || typeof sku !== 'string') {
+          return {
+            success: false,
+            message: "Invalid or missing SKU parameter. Ask the user which item they meant.",
+            executionTimeMs: Date.now() - start
+          } as AgentToolResult<any>;
+        }
+
+        const data = {
+          sku,
+          quantity,
+          size,
+          variant,
+          message: summary || "Successfully added to your cart." 
+        };
+        
+        return { success: true, data, executionTimeMs: Date.now() - start, hitlRequired: false } as AgentToolResult<typeof data>;
+      } catch (error: any) {
+        log.error('addToCart tool execution error', { error });
+        return {
+          success: false,
+          message: `Unable to add item to cart right now. Error: ${error?.message || 'Execution failed'}`,
+          executionTimeMs: Date.now() - start 
+        } as AgentToolResult<any>;
+      }
+    }
   } as any)
 };

@@ -104,3 +104,24 @@ export class MaxRetriesExhaustedError extends AppError {
     this.attempts = attempts;
   }
 }
+
+import { createLogger } from '@/lib/logger';
+const log = createLogger('ErrorHandler');
+
+export function handleError(error: unknown): Response {
+  if (error instanceof AppError) {
+    log.error(`${error.name}: ${error.message}`, { code: error.code, statusCode: error.statusCode });
+    return new Response(JSON.stringify({ error: error.message, code: error.code }), {
+      status: error.statusCode,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  const err = error instanceof Error ? error : new Error(String(error));
+  log.error('Unexpected error in chat route', { error: err.message, stack: err.stack });
+
+  return new Response(JSON.stringify({ error: 'An internal server error occurred.', code: 'INTERNAL_ERROR' }), {
+    status: 500,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}

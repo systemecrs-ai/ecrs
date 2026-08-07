@@ -13,6 +13,7 @@
 
 import { useChat } from '@ai-sdk/react';
 import { useCanvas, type CanvasProduct } from '@/context/CanvasContext';
+import { useCart } from '@/context/CartContext';
 import { DefaultChatTransport } from 'ai';
 import { useRef, useEffect, useState, useCallback, type FormEvent, useMemo } from 'react';
 import MessageBubble from './MessageBubble';
@@ -51,6 +52,7 @@ function parseCanvasToolResult(result: unknown): CanvasProduct[] | null {
 export default function ChatInterface({ threadId, initialMessages = [], onToggleSidebar, onNewChat }: ChatInterfaceProps) {
   // 1. PULL IN THE LOADING SETTER
   const { setCanvasView, getCanvasSummary, setCanvasLoading } = useCanvas();
+  const { addItem } = useCart();
   
   const { messages, sendMessage, status, error, setMessages } = useChat({
     id: threadId,
@@ -86,19 +88,35 @@ export default function ChatInterface({ threadId, initialMessages = [], onToggle
     }
 
     for (const inv of activeTools) {
-      if (!inv || inv.toolName !== 'updateProductCanvas') continue;
+      if (!inv) continue;
 
-      // Check for your specific 'input-streaming' state!
-      if (inv.state === 'call' || inv.state === 'partial-call' || inv.state === 'input-streaming') {
-        setCanvasLoading(true);
-      } 
-      else if (inv.state === 'result' || inv.result) {
-        setCanvasLoading(false);
-        if (!processedToolCallIds.current.has(inv.toolCallId)) {
-          const items = parseCanvasToolResult(inv.result);
-          if (items) {
+      if (inv.toolName === 'updateProductCanvas') {
+        // Check for your specific 'input-streaming' state!
+        if (inv.state === 'call' || inv.state === 'partial-call' || inv.state === 'input-streaming') {
+          setCanvasLoading(true);
+        } 
+        else if (inv.state === 'result' || inv.result) {
+          setCanvasLoading(false);
+          if (!processedToolCallIds.current.has(inv.toolCallId)) {
+            const items = parseCanvasToolResult(inv.result);
+            if (items) {
+              processedToolCallIds.current.add(inv.toolCallId);
+              setCanvasView('PRODUCT_RESULTS', items);
+            }
+          }
+        }
+      } else if (inv.toolName === 'addToCart') {
+        if (inv.state === 'result' || inv.result) {
+          if (!processedToolCallIds.current.has(inv.toolCallId)) {
             processedToolCallIds.current.add(inv.toolCallId);
-            setCanvasView('PRODUCT_RESULTS', items);
+            if (inv.result?.data) {
+              addItem({
+                sku: inv.result.data.sku,
+                quantity: inv.result.data.quantity,
+                size: inv.result.data.size,
+                variant: inv.result.data.variant
+              });
+            }
           }
         }
       }
@@ -141,16 +159,25 @@ export default function ChatInterface({ threadId, initialMessages = [], onToggle
           }
 
           const canvasTool = activeTools.find((t: any) => t && t.toolName === 'updateProductCanvas');
+          const cartTool = activeTools.find((t: any) => t && t.toolName === 'addToCart');
           
           // Updated to check your specific 'input-streaming' state
           const isPendingTool = activeTools.some((t: any) => t && (t.state === 'partial-call' || t.state === 'call' || t.state === 'input-streaming'));
 
           // THE EMPTY BUBBLE FIX
-          if (!cleanContent.trim() && canvasTool) {
-            if (canvasTool.state === 'partial-call' || canvasTool.state === 'call' || canvasTool.state === 'input-streaming') {
-              cleanContent = canvasTool.args?.summary || 'Curating recommendations...';
-            } else if (canvasTool.state === 'result' || canvasTool.result) {
-              cleanContent = canvasTool.args?.summary || canvasTool.result?.data?.summary || 'Here are your recommendations!';
+          if (!cleanContent.trim()) {
+            if (canvasTool) {
+              if (canvasTool.state === 'partial-call' || canvasTool.state === 'call' || canvasTool.state === 'input-streaming') {
+                cleanContent = canvasTool.args?.summary || 'Curating recommendations...';
+              } else if (canvasTool.state === 'result' || canvasTool.result) {
+                cleanContent = canvasTool.args?.summary || canvasTool.result?.data?.summary || 'Here are your recommendations!';
+              }
+            } else if (cartTool) {
+              if (cartTool.state === 'partial-call' || cartTool.state === 'call' || cartTool.state === 'input-streaming') {
+                cleanContent = 'Adding item to cart...';
+              } else if (cartTool.state === 'result' || cartTool.result) {
+                cleanContent = cartTool.result?.data?.message || 'Successfully added to your cart!';
+              }
             }
           }
 

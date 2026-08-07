@@ -8,8 +8,9 @@
  */
 
 import { APP_NAME } from '@/config/constants';
-import { Sparkles, Menu, X, User } from 'lucide-react';
+import { Sparkles, Menu, X, User, ShoppingCart } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useCart } from '@/context/CartContext';
 import ProfileDropdown from './ProfileDropdown';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -20,6 +21,8 @@ interface HeaderProps {
 }
 
 export default function Header({ isChatOpen, onToggleChat }: HeaderProps) {
+  const { totalItems } = useCart();
+  
   return (
     <header className="sticky top-0 z-50 border-b border-white/[0.06] bg-black/50 backdrop-blur-xl">
       <div className="flex h-16 w-full items-center justify-between px-6">
@@ -40,6 +43,16 @@ export default function Header({ isChatOpen, onToggleChat }: HeaderProps) {
 
         {/* Right side controls */}
         <div className="flex items-center gap-4">
+          {/* Cart Icon */}
+          <button className="relative flex items-center justify-center p-2 rounded-full text-white/70 hover:bg-white/[0.05] hover:text-white transition-colors">
+            <ShoppingCart className="h-5 w-5" />
+            {totalItems > 0 && (
+              <span className="absolute top-1.5 right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-indigo-500 text-[9px] font-bold text-white ring-2 ring-black">
+                {totalItems}
+              </span>
+            )}
+          </button>
+
           <ProfileDropdown />
 
           {/* Chat Toggle Button */}
