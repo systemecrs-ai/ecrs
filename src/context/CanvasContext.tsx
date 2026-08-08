@@ -30,6 +30,8 @@ export type CanvasView = 'DEFAULT_CANVAS' | 'PRODUCT_RESULTS';
 
 interface CanvasState {
   activeView: CanvasView;
+  allProducts: CanvasProduct[];
+  searchResults: CanvasProduct[];
   viewData: CanvasProduct[];
   isLoading: boolean;
 }
@@ -38,6 +40,9 @@ interface CanvasContextType extends CanvasState {
   setCanvasView: (view: CanvasView, data?: CanvasProduct[]) => void;
   setCanvasLoading: (loading: boolean) => void;
   getCanvasSummary: () => string;
+  setAllProducts: (data: CanvasProduct[]) => void;
+  setSearchResults: (data: CanvasProduct[]) => void;
+  resetToDefaultCanvas: () => void;
 }
 
 // ─── Context & Provider ─────────────────────────────────────────────────────
@@ -47,16 +52,43 @@ const CanvasContext = createContext<CanvasContextType | undefined>(undefined);
 export function CanvasProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<CanvasState>({
     activeView: 'DEFAULT_CANVAS',
+    allProducts: [],
+    searchResults: [],
     viewData: [],
     isLoading: false,
   });
 
   const setCanvasView = useCallback((view: CanvasView, data: CanvasProduct[] = [], loading: boolean = false) => {
-    setState({ activeView: view, viewData: data, isLoading: loading });
+    setState(prev => ({ ...prev, activeView: view, viewData: data, isLoading: loading }));
   }, []);
 
   const setCanvasLoading = useCallback((loading: boolean) => {
     setState(prev => ({ ...prev, isLoading: loading }));
+  }, []);
+
+  const setAllProducts = useCallback((data: CanvasProduct[]) => {
+    setState(prev => ({
+      ...prev,
+      allProducts: data,
+      viewData: prev.activeView === 'DEFAULT_CANVAS' ? data : prev.viewData,
+    }));
+  }, []);
+
+  const setSearchResults = useCallback((data: CanvasProduct[]) => {
+    setState(prev => ({
+      ...prev,
+      searchResults: data,
+      activeView: 'PRODUCT_RESULTS',
+      viewData: data,
+    }));
+  }, []);
+
+  const resetToDefaultCanvas = useCallback(() => {
+    setState(prev => ({
+      ...prev,
+      activeView: 'DEFAULT_CANVAS',
+      viewData: prev.allProducts,
+    }));
   }, []);
 
   /**
@@ -74,7 +106,15 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
   }, [state.viewData]);
 
   return (
-    <CanvasContext.Provider value={{ ...state, setCanvasView, getCanvasSummary, setCanvasLoading }}>
+    <CanvasContext.Provider value={{
+      ...state,
+      setCanvasView,
+      getCanvasSummary,
+      setCanvasLoading,
+      setAllProducts,
+      setSearchResults,
+      resetToDefaultCanvas
+    }}>
       {children}
     </CanvasContext.Provider>
   );

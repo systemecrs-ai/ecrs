@@ -1,16 +1,54 @@
-# StyleAI Architecture Documentation
+# CartContext Architecture Documentation
 
 ## System Overview
-The StyleAI system is an enterprise-grade, zero-hallucination Retrieval-Augmented Generation (RAG) pipeline designed for an intelligent apparel shopping assistant. The architecture prioritizes extremely low-latency responses, cost efficiency, and strict tenant data isolation. To achieve this, it relies on semantic cache interception, multi-tiered retrieval, and asynchronous background processing, orchestrated by the Vercel AI SDK.
+The CartContext system is an enterprise-grade, zero-hallucination Retrieval-Augmented Generation (RAG) pipeline designed for an intelligent apparel shopping assistant. The architecture prioritizes extremely low-latency responses, cost efficiency, and strict tenant data isolation. To achieve this, it relies on semantic cache interception, multi-tiered retrieval, and asynchronous background processing, orchestrated by the Vercel AI SDK.
 
 ## System Architecture & Tiers
 
 ### Presentation Tier (Frontend)
-The frontend is built with Next.js and operates across three primary UI regions (managed by a Split View layout in `page.tsx`):
-- **Main Workspace / Chat Sidebar**: The left-hand navigation and thread selection pane (`ChatSidebar`).
-- **Collapsible Chat Drawer**: A persistent, sliding drawer interface (`ChatInterface` wrapped in Framer Motion) for the StyleAI assistant.
-- **Product Canvas**: A dedicated, central view (`ProductCanvas`) for rendering rich product cards and details.
-The frontend natively consumes Vercel AI SDK streams (e.g., via `useChat`), allowing real-time, token-by-token rendering of the LLM response and dynamic UI component updates.
+
+The frontend is built with Next.js and operates in a **Split-Pane Workspace Layout**:
+
+#### Split-Pane Layout
+- **Left Pane (60-65% width)**: Interactive Product Canvas workspace. Renders high-density product grids, carousels, and detail drawers when `updateProductCanvas` fires. Connected to `CanvasContext` for reactive state.
+- **Right Pane (35-40% width)**: Streamlined Chat Narrative. Displays conversational messages, compact tool status pills (Pending/Success/Error), and prompt inputs via `ChatInterface`.
+- **Mobile Fallback**: A bottom tab bar with "Products" and "AI Chat" tabs provides full-screen view switching on smaller viewports (`<1024px`).
+
+#### State Orchestration
+The UI orchestration layer relies on two React context providers:
+
+1. **`CanvasContext`** (`CanvasProvider`) — Manages the product canvas state:
+   - `activeView`: `'DEFAULT_CANVAS'` or `'PRODUCT_RESULTS'`
+   - `viewData`: Array of `CanvasProduct` objects hydrated from MongoDB
+   - `isLoading`: Boolean for showing loading overlays during tool execution
+   - `getCanvasSummary()`: Serializes the current canvas into a text string injected into every chat request so the LLM can resolve pronouns like "the first one"
+
+2. **`CartContext`** (`CartProvider`) — Manages the global shopping cart:
+   - `items`: Array of `CartItem` objects with quantity stacking
+   - `addItem()`, `removeItem()`, `updateQuantity()`, `clearCart()`
+   - `totalItems` and `totalPrice` computed values
+
+#### Component Architecture
+
+```
+RootLayout
+├── CartProvider (global)
+└── Home (page.tsx)
+    └── CanvasProvider
+        └── MainApp
+            ├── Header (sticky, contains CartPanel toggle)
+            │   └── CartPanel (slide-out drawer)
+            ├── ChatSidebar (history panel, overlay)
+            ├── Left Pane: ProductCanvas / ProductResultsCanvas
+            │   ├── ProductCard (interactive, with size selectors)
+            │   └── ProductDetailDrawer (slide-in specs view)
+            ├── Right Pane: ChatInterface
+            │   ├── MessageBubble (with tool pills)
+            │   ├── ChatInput
+            │   ├── RetrievalIndicator
+            │   └── TypingIndicator
+            └── Mobile Tab Bar (lg:hidden)
+```
 
 ### Authentication & Storage (Supabase)
 The system employs a strict zero-trust architecture powered by Supabase:
@@ -42,7 +80,25 @@ When a POST request arrives at `/api/chat`, it executes the following strictly c
 Before domain logic executes, the system establishes a secure request context using Node's `AsyncLocalStorage` (`runWithContext`). The Supabase-verified `userId` and conversation `threadId` are threaded through the entire call stack implicitly. This ensures deep infrastructure layers (like the chat history repository) can enforce tenant isolation without polluting intermediate function signatures.
 
 ### Phase 2: Intent Routing (Front-Door Classification)
-The request is immediately classified using the fast 8B model. The LLM determines if the intent is `CASUAL` (small talk, greetings), `RAG_KNOWLEDGE` (product searches, policy questions), or `TOOL_ACTION` (checking inventory, order status). If classified as `CASUAL`, the system streams a lightweight response from the 8B model and immediately exits, saving the 70B model's compute. If classified as `TOOL_ACTION`, the system completely bypasses the semantic cache and vector retrieval (saving database compute) and jumps straight to the 70B model with the user prompt and tools array to interact with real-time data dynamically.
+
+The request is immediately classified using the fast 8B model. The LLM determines the intent and subdomain:
+
+| Intent | Description | Action |
+|--------|-------------|--------|
+| `CASUAL` | Small talk, greetings | Stream lightweight 8B response, exit immediately |
+| `TOOL_ACTION` | Inventory checks, cart mutations, orders | Bypass cache + RAG, jump to 70B with scoped tools |
+| `RAG_KNOWLEDGE` | Product searches, policy questions | Full pipeline (cache → retrieval → generation) |
+
+#### Short-Circuit Action Paths (SubDomain Routing)
+
+| SubDomain | Scoped Tools | Description |
+|-----------|-------------|-------------|
+| `CART_MUTATION` | `addToCart`, `updateProductCanvas`, `checkInventory` | User wants to add/modify cart |
+| `CANVAS_UPDATE` | `updateProductCanvas`, `addToCart`, `checkInventory` | User wants to see products |
+| `PRODUCT_SEARCH` | `updateProductCanvas`, `addToCart`, `checkInventory` | Discovery + purchase flow |
+| `ORDER_LOOKUP` | `fetchOrderStatus` | Order tracking |
+| `RESERVATION` | `reserveItemInStore`, `checkInventory` | In-store reservation (HITL) |
+| `GENERAL_HYBRID` | `updateProductCanvas`, `addToCart` | Fallback for general queries |
 
 ### Phase 3: Two-Tier Semantic Caching
 If the intent is `RAG_KNOWLEDGE`, the system attempts a cache interception to prevent redundant LLM generation:
@@ -65,12 +121,38 @@ These searches execute concurrently via `Promise.all` to minimize latency.
    - **Human-in-the-Loop (HITL)**: For write/action tools like `reserveItemInStore`, the backend safely halts database mutations unless an explicit `confirmed: true` flag is received. It returns a `hitlRequired` payload to the client.
    - **Tool Observability & UI Rendering**: The client application dynamically renders loading indicators for active tools and an interactive Confirmation Card for HITL events. User approvals send a callback to the API route, seamlessly resuming the ReAct loop.
 
+## Optimistic UI & Universal Adapter Event Flow
+
+The frontend tool interception pipeline ensures seamless bidirectional state sync between the chat narrative and the canvas/cart:
+
+### Universal Tool Adapter
+Located in `ChatInterface.tsx`, the adapter normalizes all Vercel AI SDK tool invocation shapes (v5 `toolInvocations[]`, v7 `parts[]` with `tool-invocation` type, and raw `toolCallId` shapes) into a unified format:
+
+```typescript
+{ toolCallId, toolName, state, args, result }
+```
+
+### `updateProductCanvas` Flow
+1. **`call` / `input-streaming` state** → `setCanvasLoading(true)` → Canvas shows loading overlay
+2. **`result` state** → `parseCanvasToolResult()` extracts `data.items[]` → `setCanvasView('PRODUCT_RESULTS', items)` → Canvas renders product grid
+3. **Chat bubble** → Shows summary text (from `args.summary`) instead of raw JSON
+
+### `addToCart` Flow
+1. **`call` / `input-streaming` state** → Chat bubble shows "Adding to cart..." pill
+2. **`result` state** → Frontend enriches cart item with product metadata from `CanvasContext.viewData` (cross-referencing by SKU) → `CartContext.addItem()` dispatched → Header badge updates immediately
+3. **Chat bubble** → Shows green `[✓ Added to Cart · View Cart]` pill with clickable "View Cart" that opens the cart panel
+
+### HITL (`reserveItemInStore`) Flow
+1. **`result` with `hitlRequired: true`** → Confirmation Card rendered in chat bubble
+2. **User clicks "Approve"** → Sends confirmation message back through `sendMessage`
+3. **User clicks "Cancel"** → Sends cancellation message
+
 ### Agentic Tools: The addToCart Flow
 The conversational commerce AI uses the `addToCart` tool to seamlessly integrate chat intent with the user's shopping cart:
 1. **LLM Intent**: The ReAct engine identifies the user's intent to add a product (e.g. "Add this to my cart") and initiates the `addToCart` tool call with parameters (`sku`, `quantity`, `size`, `variant`).
 2. **Tool Execution**: The backend executes the tool defensively, returning a success payload indicating the item is added.
 3. **Frontend Interception**: The Universal Tool Adapter in `ChatInterface.tsx` intercepts the tool state. While `input-streaming`, it renders an optimistic UI ("Adding item to cart...").
-4. **Cart State Update**: Once the tool reaches the `result` state, the frontend dispatches the returned item directly to the global Cart Context, instantly updating the user's cart icon and rendering an elegant success pill in the chat bubble.
+4. **Cart State Update**: Once the tool reaches the `result` state, the frontend enriches the item data by cross-referencing the SKU against `CanvasContext.viewData`, then dispatches directly to the global Cart Context, instantly updating the user's cart icon and rendering an elegant success pill in the chat bubble.
 
 ### Phase 6: Asynchronous Operations (Background Jobs)
 Once the streaming response is initiated, the system detaches asynchronous background operations (fire-and-forget) to ensure zero impact on user latency:

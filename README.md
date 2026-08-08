@@ -11,7 +11,9 @@ CartContext is a polymorphic Retrieval-Augmented Generation (RAG) engine built t
 
 ## Key Features
 - **Zero-Hallucination RAG Pipeline**: Multi-tiered semantic retrieval with Cohere reranking.
+- **Split-Pane Workspace Layout**: Interactive product canvas (60%) + AI chat narrative (40%) with mobile tab switching.
 - **Agentic Cart Mutations (Optimistic UI)**: Real-time, defensively parsed tool execution seamlessly integrated with global cart state.
+- **Bidirectional Tool Interception**: Universal adapter intercepts `updateProductCanvas`, `addToCart`, and HITL tools to sync chat, canvas, and cart state.
 - **Two-Tier Semantic Caching**: Sub-1.2s TTFT with TTL-pruned MongoDB caching and LLM verification.
 - **Async Document Ingestion**: Inngest-powered durable background jobs for structural extraction and embedding.
 
@@ -31,7 +33,7 @@ Optimizing Time to First Token (TTFT) and maintaining high retrieval precision (
 The request lifecycle is strictly controlled to ensure security, low latency, and maximum context relevance:
 
 1. **Context Initialization**: `AsyncLocalStorage` establishes a secure request context, implicitly threading the Supabase-verified `userId` and `threadId` to guarantee tenant isolation.
-2. **Intent Routing**: A fast 8B model instantly classifies the query as `CASUAL` or `RAG`. `CASUAL` queries are fulfilled immediately.
+2. **Intent Routing**: A fast 8B model instantly classifies the query as `CASUAL`, `TOOL_ACTION`, or `RAG_KNOWLEDGE`. `CASUAL` queries are fulfilled immediately. `TOOL_ACTION` queries bypass cache and RAG, jumping straight to the 70B model with scoped tools.
 3. **Semantic Caching**: For `RAG` queries, a vector search against the `semantic_cache` evaluates historical answers. If a semantic match is found and verified by the LLM, the cached response is streamed immediately.
 4. **Triple-Retrieval**: On a cache miss, the system executes concurrent, parallelized hybrid searches across three domains:
    - **Products** (BM25 + Vector via Reciprocal Rank Fusion)
@@ -42,11 +44,221 @@ The request lifecycle is strictly controlled to ensure security, low latency, an
 
 ## Tech Stack
 
-- **Frontend/Edge**: Next.js (App Router), TypeScript, React, TailwindCSS, Framer Motion
+- **Frontend/Edge**: Next.js (App Router), TypeScript, React, TailwindCSS v4, Framer Motion
 - **Backend/Queue**: Node.js, Vercel AI SDK (v7), Inngest (Durable Execution)
 - **Database/Cache**: MongoDB Atlas (with `$vectorSearch`), Redis (State Synchronization), Supabase (Auth & Blob Storage)
 - **AI/ML Infrastructure**: Nvidia NIM (meta/llama-3.1-8b & 70b, Nemotron), Cohere (Reranker v3.0), LlamaParse
 - **Infrastructure**: Vercel, Docker, Langfuse (Observability)
+
+---
+
+## Enterprise Tool Documentation
+
+### Active Production Tools
+
+#### 1. `updateProductCanvas`
+| Property | Value |
+|----------|-------|
+| **Description** | Displays products on the user interface canvas |
+| **Trigger SubDomains** | `CANVAS_UPDATE`, `PRODUCT_SEARCH`, `CART_MUTATION`, `GENERAL_HYBRID` |
+| **Frontend Interception** | Extracts `data.items[]` from tool result → pushes to `CanvasContext` → Canvas renders product grid |
+
+**Input Parameters (Zod Schema):**
+```typescript
+z.object({
+  skus: z.array(z.string()),      // Array of exact string SKUs
+  summary: z.string().optional()   // Brief 1-sentence summary
+}).strict()
+```
+
+**Output Schema:**
+```typescript
+{
+  success: boolean;
+  executionTimeMs: number;
+  hitlRequired: false;
+  data: {
+    items: Array<{
+      sku: string;
+      name: string;
+      price: number;
+      description: string;
+      imageUrl: string;
+      inStock: boolean;
+    }>;
+    summary?: string;
+  };
+}
+```
+
+---
+
+#### 2. `addToCart`
+| Property | Value |
+|----------|-------|
+| **Description** | Adds an item to the user's shopping cart |
+| **Trigger SubDomains** | `CART_MUTATION`, `CANVAS_UPDATE`, `PRODUCT_SEARCH`, `GENERAL_HYBRID` |
+| **Frontend Interception** | Dispatches item to `CartContext.addItem()` with enriched metadata from `CanvasContext.viewData` |
+
+**Input Parameters (Zod Schema):**
+```typescript
+z.object({
+  sku: z.string(),                // Product SKU
+  quantity: z.number().default(1), // Number of items to add
+  size: z.string().optional(),     // Selected size
+  variant: z.string().optional(),  // Selected variant/color
+  summary: z.string().optional()   // Friendly confirmation message
+})
+```
+
+**Output Schema:**
+```typescript
+{
+  success: boolean;
+  executionTimeMs: number;
+  hitlRequired: false;
+  data: {
+    sku: string;
+    quantity: number;
+    size?: string;
+    variant?: string;
+    message: string;
+  };
+}
+```
+
+---
+
+#### 3. `checkInventory`
+| Property | Value |
+|----------|-------|
+| **Description** | Queries MongoDB for stock availability by SKU and Size |
+| **Trigger SubDomains** | `CART_MUTATION`, `CANVAS_UPDATE`, `PRODUCT_SEARCH`, `RESERVATION` |
+| **Frontend Interception** | None — result rendered as conversational text by the LLM |
+
+**Input Parameters (Zod Schema):**
+```typescript
+z.object({
+  sku: z.string().optional(),  // Product SKU
+  size: z.string().optional()  // Size to check (S, M, L, XL)
+})
+```
+
+**Output Schema:**
+```typescript
+{
+  success: boolean;
+  executionTimeMs: number;
+  hitlRequired: false;
+  data: {
+    sku: string;
+    size: string;
+    productName: string;
+    available: boolean;
+    message: string;
+  };
+}
+```
+
+---
+
+#### 4. `fetchOrderStatus`
+| Property | Value |
+|----------|-------|
+| **Description** | Queries user order status by orderId or userId |
+| **Trigger SubDomains** | `ORDER_LOOKUP` |
+| **Frontend Interception** | None — result rendered as conversational text |
+
+**Input Parameters (Zod Schema):**
+```typescript
+z.object({
+  orderId: z.string().optional(), // The order ID
+  userId: z.string().optional()   // The user ID
+})
+```
+
+**Output Schema:**
+```typescript
+{
+  success: boolean;
+  executionTimeMs: number;
+  hitlRequired: false;
+  data: {
+    orderId: string;
+    userId: string;
+    status: string;           // e.g., 'SHIPPED', 'DELIVERED'
+    estimatedDelivery: string; // ISO date string
+    message: string;
+  };
+}
+```
+
+> **Note:** This tool currently uses mock data for order status. Future integration with a real order management system is planned.
+
+---
+
+#### 5. `reserveItemInStore`
+| Property | Value |
+|----------|-------|
+| **Description** | Prepares an in-store item reservation with Human-in-the-Loop (HITL) confirmation |
+| **Trigger SubDomains** | `RESERVATION` |
+| **Frontend Interception** | Renders HITL Confirmation Card in `MessageBubble` with Approve/Cancel buttons |
+
+**Input Parameters (Zod Schema):**
+```typescript
+z.object({
+  sku: z.string().optional(),       // Product SKU to reserve
+  storeId: z.string().optional(),   // Target store ID
+  userId: z.string().optional(),    // Requesting user ID
+  confirmed: z.boolean().optional() // true only if user explicitly confirmed
+})
+```
+
+**Output Schema (HITL Required):**
+```typescript
+{
+  success: true;
+  executionTimeMs: number;
+  hitlRequired: true;
+  data: {
+    toolName: 'reserveItemInStore';
+    parameters: { sku, storeId, userId, confirmed };
+    actionSummary: string;
+    confirmationId: string; // UUID
+  };
+}
+```
+
+**Output Schema (Confirmed):**
+```typescript
+{
+  success: true;
+  executionTimeMs: number;
+  hitlRequired: false;
+  data: {
+    reservationId: string;  // UUID
+    sku: string;
+    storeId: string;
+    status: 'RESERVED';
+    message: string;
+  };
+}
+```
+
+> **Note:** This tool currently uses mock reservation logic. Future integration with a real store inventory system is planned.
+
+---
+
+### Inactive / Experimental Tools
+
+| Tool | Status | Intended Utility |
+|------|--------|-----------------|
+| `searchByImage` | **Planned** | Visual search — upload a photo and find similar products via CLIP embeddings |
+| `compareProducts` | **Planned** | Side-by-side product comparison with pricing, specs, and rating analysis |
+| `applyPromoCode` | **Planned** | Validate and apply promotional codes during checkout flow |
+| `getStyleRecommendations` | **Planned** | AI-driven outfit assembly based on user preferences and purchase history |
+
+---
 
 ## Getting Started (Local Development)
 
@@ -54,13 +266,13 @@ The request lifecycle is strictly controlled to ensure security, low latency, an
 - Node.js (v20+)
 - Docker & docker-compose
 - MongoDB Atlas cluster (M0 or higher with Vector Search enabled)
-- [Insert API Key Provider] Accounts (Nvidia NIM, Cohere, Supabase, Inngest)
+- API Key Accounts: Nvidia NIM, Cohere, Supabase, Inngest
 
 ### Installation
 ```bash
 # Clone the repository
 git clone [Insert Repository URL]
-cd styleai-engine
+cd ecrs-app
 
 # Install dependencies
 npm install
@@ -111,3 +323,5 @@ npm start
 - **Functional Paradigms for Data Transformations**: Migrate the complex LlamaParse chunking and summarization logic into isolated, pure functional pipelines (e.g., using `fp-ts`) to improve testability and reduce side-effects during document ingestion.
 - **Deep Distributed Observability**: Implement OpenTelemetry tracing across the Next.js edge, Inngest workers, and MongoDB layers to achieve granular bottleneck visualization beyond the current Langfuse LLM traces.
 - **Predictive Caching via Speculative Decoding**: Pre-warm the semantic cache by predicting follow-up user intents based on the current conversational context, further reducing latency for sequential reasoning tasks.
+- **Visual Search (`searchByImage`)**: Enable image-based product discovery using CLIP embeddings.
+- **Multi-Store Reservation System**: Connect `reserveItemInStore` to real store inventory APIs.

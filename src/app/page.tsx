@@ -1,5 +1,12 @@
 'use client';
 
+/**
+ * Main Application Page — Split-Pane Workspace Layout
+ * 
+ * Desktop: Left pane (60-65%) = Product Canvas, Right pane (35-40%) = Chat
+ * Mobile: Bottom tab bar switching between Canvas and Chat full-screen views
+ */
+
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import GradientBackground from '@/components/ui/GradientBackground';
@@ -7,9 +14,9 @@ import Header from '@/components/layout/Header';
 import ChatInterface from '@/components/chat/ChatInterface';
 import ChatSidebar from '@/components/chat/ChatSidebar';
 import ProductCanvas from '@/components/ui/ProductCanvas';
-import ProductResultsCanvas from '@/components/canvas/ProductResultsCanvas';
 import { CanvasProvider, useCanvas } from '@/context/CanvasContext';
 import { Analytics } from "@vercel/analytics/next";
+import { Sparkles, Layers } from 'lucide-react';
 
 function getLocalThreadId(): string {
   if (typeof window === 'undefined') return 'server';
@@ -43,13 +50,17 @@ function CanvasLoadingOverlay() {
   );
 }
 
+/**
+ * Mobile tab type for bottom tab bar
+ */
+type MobileTab = 'canvas' | 'chat';
+
 function MainApp() {
-  const [isChatOpen, setIsChatOpen] = useState(true); // Default to open for better UX
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [currentThreadId, setCurrentThreadId] = useState<string>('');
   const [initialMessages, setInitialMessages] = useState<any[]>([]);
+  const [mobileTab, setMobileTab] = useState<MobileTab>('chat');
   
-  // 1. EXTRACT ALL CANVAS CONTEXT VALUES
   const { activeView, viewData, setCanvasView, isLoading: isCanvasLoading } = useCanvas();
 
   useEffect(() => {
@@ -82,15 +93,23 @@ function MainApp() {
     setCanvasView('DEFAULT_CANVAS', []);
   };
 
+  const handleToggleMobileTab = () => {
+    setMobileTab(prev => prev === 'canvas' ? 'chat' : 'canvas');
+  };
+
   return (
     <>
       <Analytics />
       <GradientBackground />
-      <div className="flex min-h-screen flex-col">
-        <Header isChatOpen={isChatOpen} onToggleChat={() => setIsChatOpen(!isChatOpen)} />
+      <div className="flex h-screen w-full overflow-hidden flex-col">
+        <Header 
+          isChatOpen={mobileTab === 'chat'}
+          onToggleChat={handleToggleMobileTab}
+          showChatToggle={true}
+        />
         
         <main className="relative flex flex-1 overflow-hidden">
-          {/* Chat Sidebar (Left) */}
+          {/* Chat Sidebar (Left History Panel — Overlay) */}
           <ChatSidebar 
             isOpen={isSidebarOpen}
             onClose={() => setIsSidebarOpen(false)}
@@ -99,32 +118,31 @@ function MainApp() {
             currentThreadId={currentThreadId}
           />
 
-          {/* Main Product Canvas (Middle/Center) */}
+          {/* ══════════════════════════════════════════════════════════
+              SPLIT-PANE LAYOUT
+              Desktop: side-by-side (left canvas 60-65%, right chat 35-40%)
+              Mobile: one pane at a time with bottom tab bar
+              ══════════════════════════════════════════════════════════ */}
+
+          {/* LEFT PANE — Product Canvas (hidden on mobile when chat tab is active) */}
           <div
-            className={`relative flex-1 transition-all duration-500 ease-in-out ${
-              isChatOpen ? 'mr-0 lg:mr-[400px]' : ''
-            } ${isSidebarOpen ? 'ml-0 lg:ml-64' : ''}`}
+            className={`relative flex-1 transition-all duration-300 ease-in-out ${
+              mobileTab === 'chat' ? 'hidden lg:flex' : 'flex'
+            } flex-col overflow-y-auto`}
           >
-            {/* 2. ENTERPRISE LOADING OVERLAY: Rendered reactively when tool is running */}
+            {/* Canvas Loading Overlay */}
             <AnimatePresence>
               {isCanvasLoading && <CanvasLoadingOverlay />}
             </AnimatePresence>
 
-            {activeView === 'PRODUCT_RESULTS' ? (
-              <ProductResultsCanvas 
-                products={viewData} 
-                onBack={() => setCanvasView('DEFAULT_CANVAS')} 
-              />
-            ) : (
-              <ProductCanvas />
-            )}
+            <ProductCanvas />
           </div>
 
-          {/* 3. ALWAYS-MOUNTED CHAT DRAWER: Uses CSS translation instead of conditional unmounting */}
+          {/* RIGHT PANE — Chat Interface */}
           <div
-            className={`fixed right-0 top-16 z-40 h-[calc(100vh-64px)] w-full max-w-[400px] border-l border-white/[0.08] bg-black/60 shadow-2xl backdrop-blur-2xl transition-transform duration-300 ease-in-out sm:w-[400px] ${
-              isChatOpen ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 pointer-events-none'
-            }`}
+            className={`flex flex-col border-l border-white/[0.08] bg-black/60 backdrop-blur-2xl transition-all duration-300 ease-in-out ${
+              mobileTab === 'canvas' ? 'hidden lg:flex' : 'flex'
+            } w-full lg:w-[450px] flex-shrink-0 overflow-y-auto`}
           >
             {currentThreadId && (
               <ChatInterface 
@@ -137,6 +155,32 @@ function MainApp() {
             )}
           </div>
         </main>
+
+        {/* ── Mobile Bottom Tab Bar ─────────────────────────────── */}
+        <div className="sticky bottom-0 z-40 flex items-center border-t border-white/[0.08] bg-black/80 backdrop-blur-xl lg:hidden">
+          <button
+            onClick={() => setMobileTab('canvas')}
+            className={`flex flex-1 flex-col items-center gap-1 py-3 transition-colors ${
+              mobileTab === 'canvas'
+                ? 'text-indigo-400'
+                : 'text-white/30 hover:text-white/50'
+            }`}
+          >
+            <Layers className="h-5 w-5" />
+            <span className="text-[10px] font-semibold uppercase tracking-wider">Products</span>
+          </button>
+          <button
+            onClick={() => setMobileTab('chat')}
+            className={`flex flex-1 flex-col items-center gap-1 py-3 transition-colors ${
+              mobileTab === 'chat'
+                ? 'text-indigo-400'
+                : 'text-white/30 hover:text-white/50'
+            }`}
+          >
+            <Sparkles className="h-5 w-5" />
+            <span className="text-[10px] font-semibold uppercase tracking-wider">AI Chat</span>
+          </button>
+        </div>
       </div>
     </>
   );

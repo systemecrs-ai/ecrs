@@ -51,7 +51,7 @@ function parseCanvasToolResult(result: unknown): CanvasProduct[] | null {
 
 export default function ChatInterface({ threadId, initialMessages = [], onToggleSidebar, onNewChat }: ChatInterfaceProps) {
   // 1. PULL IN THE LOADING SETTER
-  const { setCanvasView, getCanvasSummary, setCanvasLoading } = useCanvas();
+  const { setCanvasView, getCanvasSummary, setCanvasLoading, viewData, setSearchResults } = useCanvas();
   const { addItem } = useCart();
   
   const { messages, sendMessage, status, error, setMessages } = useChat({
@@ -101,7 +101,7 @@ export default function ChatInterface({ threadId, initialMessages = [], onToggle
             const items = parseCanvasToolResult(inv.result);
             if (items) {
               processedToolCallIds.current.add(inv.toolCallId);
-              setCanvasView('PRODUCT_RESULTS', items);
+              setSearchResults(items);
             }
           }
         }
@@ -110,18 +110,23 @@ export default function ChatInterface({ threadId, initialMessages = [], onToggle
           if (!processedToolCallIds.current.has(inv.toolCallId)) {
             processedToolCallIds.current.add(inv.toolCallId);
             if (inv.result?.data) {
+              // Enrich with product metadata from canvas if available
+              const canvasProduct = viewData.find(p => p.sku === inv.result.data.sku);
               addItem({
                 sku: inv.result.data.sku,
-                quantity: inv.result.data.quantity,
+                quantity: inv.result.data.quantity ?? 1,
                 size: inv.result.data.size,
-                variant: inv.result.data.variant
+                variant: inv.result.data.variant,
+                name: canvasProduct?.name,
+                price: canvasProduct?.price,
+                imageUrl: canvasProduct?.imageUrl,
               });
             }
           }
         }
       }
     }
-  }, [messages, setCanvasView, setCanvasLoading]);
+  }, [messages, setCanvasView, setCanvasLoading, addItem, viewData, setSearchResults]);
 
   // ─── VISUAL CLEANUP & DISPLAY STATE PRE-PROCESSING ─────────────────────
   // ─── VISUAL CLEANUP & DISPLAY STATE PRE-PROCESSING ─────────────────────
