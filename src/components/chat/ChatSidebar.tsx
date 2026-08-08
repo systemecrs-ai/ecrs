@@ -82,14 +82,14 @@ export default function ChatSidebar({ isOpen, onClose, onSelectThread, onNewChat
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 z-40 bg-transparent backdrop-blur-lg lg:hidden"
+            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-lg lg:hidden"
           />
           <motion.div
             initial={{ x: '-100%', opacity: 0.5 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: '-100%', opacity: 0.5 }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className="fixed left-0 top-16 bottom-0 z-50 w-64  border-r border-white/10 shadow-2xl flex flex-col"
+            className="fixed left-0 top-16 bottom-0 z-50 w-64 bg-black/60 border-r border-white/10 shadow-2xl flex flex-col"
           >
             <div className="p-4 border-b border-t border-white/20 flex items-center justify-between bg-black border-white">
               <h2 className="text-sm font-semibold text-white flex items-center gap-2">

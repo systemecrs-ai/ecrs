@@ -129,7 +129,6 @@ export default function ChatInterface({ threadId, initialMessages = [], onToggle
   }, [messages, setCanvasView, setCanvasLoading, addItem, viewData, setSearchResults]);
 
   // ─── VISUAL CLEANUP & DISPLAY STATE PRE-PROCESSING ─────────────────────
-  // ─── VISUAL CLEANUP & DISPLAY STATE PRE-PROCESSING ─────────────────────
   const cleanedMessages = useMemo(() => {
     return messages
       .map(msg => {
