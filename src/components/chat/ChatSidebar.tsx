@@ -76,22 +76,15 @@ export default function ChatSidebar({ isOpen, onClose, onSelectThread, onNewChat
   return (
     <AnimatePresence>
       {isOpen && (
-        <>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-lg lg:hidden"
-          />
-          <motion.div
-            initial={{ x: '-100%', opacity: 0.5 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: '-100%', opacity: 0.5 }}
-            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className="fixed left-0 top-16 bottom-0 z-50 w-64 bg-black/60 border-r border-white/10 shadow-2xl flex flex-col"
-          >
-            <div className="p-4 border-b border-t border-white/20 flex items-center justify-between bg-black border-white">
+        <motion.div
+          initial={{ width: 0, opacity: 0 }}
+          animate={{ width: 256, opacity: 1 }}
+          exit={{ width: 0, opacity: 0 }}
+          transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+          className="flex-shrink-0 h-full bg-black/60 border-r border-white/10 shadow-2xl flex flex-col overflow-hidden z-20"
+        >
+          <div className="w-64 h-full flex flex-col shrink-0">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between bg-black">
               <h2 className="text-sm font-semibold text-white flex items-center gap-2">
                 <Clock className="w-4 h-4 text-slate-400" />
                 Chat History
@@ -162,8 +155,8 @@ export default function ChatSidebar({ isOpen, onClose, onSelectThread, onNewChat
                 })
               )}
             </div>
-          </motion.div>
-        </>
+          </div>
+        </motion.div>
       )}
     </AnimatePresence>
   );

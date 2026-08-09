@@ -5,10 +5,10 @@ import { UNIFIED_NODES_COLLECTION, SEMANTIC_CACHE_COLLECTION } from '@/config/co
 
 export async function PUT(
   request: Request,
-  { params }: { params: { sku: string } }
+  { params }: { params: Promise<{ sku: string }> }
 ) {
   try {
-    const sku = params.sku;
+    const { sku } = await params;
     if (!sku) {
       return NextResponse.json({ error: 'SKU is required' }, { status: 400 });
     }

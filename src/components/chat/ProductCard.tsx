@@ -11,6 +11,7 @@
  */
 
 import { useState } from 'react';
+import { motion } from 'framer-motion';
 import { ShoppingCart, Search, CheckCircle2, Star } from 'lucide-react';
 
 interface ProductCardProps {
@@ -73,9 +74,17 @@ export default function ProductCard({
   };
 
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02] shadow-xl backdrop-blur-xl transition-all duration-500 hover:border-indigo-500/30 hover:bg-white/[0.04] hover:shadow-2xl hover:shadow-indigo-500/10">
+    <motion.div 
+      layoutId={`card-${sku}`}
+      layout
+      className="group relative flex flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02] shadow-xl backdrop-blur-xl transition-all duration-500 hover:border-indigo-500/30 hover:bg-white/[0.04] hover:shadow-2xl hover:shadow-indigo-500/10"
+    >
       {/* Image Area */}
-      <div className="relative aspect-[4/5] w-full overflow-hidden bg-white/[0.02]">
+      <motion.div 
+        layoutId={`image-${sku}`}
+        layout
+        className="relative aspect-[4/5] w-full overflow-hidden bg-white/[0.02]"
+      >
         {imageUrl ? (
           <img
             src={imageUrl}
@@ -106,7 +115,7 @@ export default function ProductCard({
             </span>
           )}
         </div>
-      </div>
+      </motion.div>
 
       {/* Content Area */}
       <div className="flex flex-1 flex-col justify-between p-4">
@@ -128,9 +137,13 @@ export default function ProductCard({
             )}
           </div>
           
-          <h3 className="line-clamp-2 text-sm font-medium text-white/90 transition-colors group-hover:text-indigo-300">
+          <motion.h3 
+            layoutId={`title-${sku}`}
+            layout
+            className="line-clamp-2 text-sm font-medium text-white/90 transition-colors group-hover:text-indigo-300"
+          >
             {name}
-          </h3>
+          </motion.h3>
         </div>
 
         {/* Size Selector Pills */}
@@ -206,6 +219,6 @@ export default function ProductCard({
           </button>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
