@@ -3,45 +3,88 @@
 /**
  * ProductCard
  * 
- * Inline product recommendation card displayed within chat messages and canvas.
- * Shows product details in a compact, visually appealing glassmorphism card.
+ * Interactive product card with size selector pills, stock indicator,
+ * star ratings, and dual action buttons (Quick Add + Inspect Specs).
+ * 
+ * All non-essential props are optional so the card works with both
+ * the full mock data shape and the lean CanvasProduct from the backend.
  */
 
+import { useState } from 'react';
+import { motion } from 'framer-motion';
+import { ShoppingCart, Search, CheckCircle2, Star } from 'lucide-react';
+
 interface ProductCardProps {
+  sku: string;
   name: string;
-  brand: string;
   price: number;
+  description?: string;
+  imageUrl?: string;
+  inStock?: boolean;
+  brand?: string;
   currency?: string;
   colors?: string[];
   sizes?: string[];
-  material: string;
-  rating: number;
-  reviewCount: number;
-  inStock: boolean;
-  category: string;
-  imageUrl?: string;
+  material?: string;
+  rating?: number;
+  reviewCount?: number;
+  category?: string;
+  onAddToCart?: (sku: string, size: string) => void;
+  onInspect?: (sku: string) => void;
 }
 
+const DEFAULT_SIZES = ['S', 'M', 'L', 'XL'];
+
 export default function ProductCard({
+  sku,
   name,
-  brand,
   price,
+  description,
+  imageUrl,
+  inStock = true,
+  brand,
   currency = 'USD',
   colors = [],
-  sizes = [],
+  sizes,
   material,
   rating,
   reviewCount,
-  inStock,
   category,
-  imageUrl,
+  onAddToCart,
+  onInspect,
 }: ProductCardProps) {
-  const stars = Math.round(rating);
+  const [selectedSize, setSelectedSize] = useState<string>('M');
+  const [justAdded, setJustAdded] = useState(false);
+
+  const displaySizes = sizes && sizes.length > 0 ? sizes : DEFAULT_SIZES;
+  const stars = rating ? Math.round(rating) : 0;
+
+  const handleQuickAdd = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onAddToCart && inStock) {
+      onAddToCart(sku, selectedSize);
+      setJustAdded(true);
+      setTimeout(() => setJustAdded(false), 1800);
+    }
+  };
+
+  const handleInspect = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onInspect?.(sku);
+  };
 
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02] shadow-xl backdrop-blur-xl transition-all duration-500 hover:border-indigo-500/30 hover:bg-white/[0.04] hover:shadow-2xl hover:shadow-indigo-500/10">
+    <motion.div 
+      layoutId={`card-${sku}`}
+      layout
+      className="group relative flex flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02] shadow-xl backdrop-blur-xl transition-all duration-500 hover:border-indigo-500/30 hover:bg-white/[0.04] hover:shadow-2xl hover:shadow-indigo-500/10"
+    >
       {/* Image Area */}
-      <div className="relative aspect-[4/5] w-full overflow-hidden bg-white/[0.02]">
+      <motion.div 
+        layoutId={`image-${sku}`}
+        layout
+        className="relative aspect-[4/5] w-full overflow-hidden bg-white/[0.02]"
+      >
         {imageUrl ? (
           <img
             src={imageUrl}
@@ -72,32 +115,67 @@ export default function ProductCard({
             </span>
           )}
         </div>
-      </div>
+      </motion.div>
 
       {/* Content Area */}
       <div className="flex flex-1 flex-col justify-between p-4">
         <div>
           <div className="mb-1 flex items-center justify-between gap-2">
-            <span className="text-[10px] font-medium uppercase tracking-widest text-white/50">
-              {brand}
-            </span>
-            <span className="flex items-center gap-1 text-[11px] text-amber-400">
-              <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-              </svg>
-              {rating.toFixed(1)} <span className="text-white/30">({reviewCount})</span>
-            </span>
+            {brand && (
+              <span className="text-[10px] font-medium uppercase tracking-widest text-white/50">
+                {brand}
+              </span>
+            )}
+            {rating != null && (
+              <span className="flex items-center gap-1 text-[11px] text-amber-400">
+                <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                {rating.toFixed(1)}
+                {reviewCount != null && (
+                  <span className="text-white/30">({reviewCount})</span>
+                )}
+              </span>
+            )}
           </div>
           
-          <h3 className="line-clamp-2 text-sm font-medium text-white/90 transition-colors group-hover:text-indigo-300">
+          <motion.h3 
+            layoutId={`title-${sku}`}
+            layout
+            className="line-clamp-2 text-sm font-medium text-white/90 transition-colors group-hover:text-indigo-300"
+          >
             {name}
-          </h3>
+          </motion.h3>
         </div>
 
-        <div className="mt-4 flex items-end justify-between">
+        {/* Size Selector Pills */}
+        <div className="mt-3">
+          <div className="flex flex-wrap gap-1.5">
+            {displaySizes.map((size) => (
+              <button
+                key={size}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedSize(size);
+                }}
+                className={`flex h-7 min-w-[32px] items-center justify-center rounded-lg text-[10px] font-semibold tracking-wide transition-all duration-200 ${
+                  selectedSize === size
+                    ? 'bg-indigo-600/70 text-white border border-indigo-500/40 shadow-sm shadow-indigo-500/20'
+                    : 'bg-white/[0.03] text-white/40 border border-white/[0.06] hover:bg-white/[0.06] hover:text-white/60'
+                }`}
+              >
+                {size}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-3 flex items-end justify-between">
           <div className="flex flex-col">
-            <span className="text-[10px] text-white/40">{category}</span>
-            <span className="text-[10px] text-white/40">{material}</span>
+            {category && (
+              <span className="text-[10px] text-white/40">{category}</span>
+            )}
+            {material && (
+              <span className="text-[10px] text-white/40">{material}</span>
+            )}
           </div>
           <div className="flex flex-col items-end">
             <span className="text-lg font-bold tracking-tight text-white">
@@ -106,22 +184,41 @@ export default function ProductCard({
           </div>
         </div>
 
-        {/* Colors & Sizes (if available) */}
-        {(colors.length > 0 || sizes.length > 0) && (
-          <div className="mt-4 flex items-center justify-between border-t border-white/[0.06] pt-3 text-[10px] text-white/40">
-            {colors.length > 0 && (
-              <span className="truncate">
-                {colors.slice(0, 3).join(', ')}{colors.length > 3 && '...'}
-              </span>
+        {/* Action Buttons */}
+        <div className="mt-3 flex gap-2 pt-3 border-t border-white/[0.06]">
+          <button
+            onClick={handleQuickAdd}
+            disabled={!inStock || justAdded}
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2.5 text-[11px] font-semibold transition-all duration-300 active:scale-[0.97] ${
+              justAdded
+                ? 'bg-emerald-600/80 text-white border border-emerald-500/30'
+                : inStock
+                ? 'bg-gradient-to-r from-indigo-600/80 to-violet-600/80 text-white border border-indigo-500/20 hover:from-indigo-500 hover:to-violet-500 shadow-sm hover:shadow-md hover:shadow-indigo-500/20'
+                : 'bg-white/[0.03] text-white/25 border border-white/[0.06] cursor-not-allowed'
+            }`}
+          >
+            {justAdded ? (
+              <>
+                <CheckCircle2 className="h-3 w-3" />
+                Added!
+              </>
+            ) : (
+              <>
+                <ShoppingCart className="h-3 w-3" />
+                Quick Add
+              </>
             )}
-            {sizes.length > 0 && (
-              <span className="truncate">
-                {sizes.join(', ')}
-              </span>
-            )}
-          </div>
-        )}
+          </button>
+          
+          <button
+            onClick={handleInspect}
+            className="flex items-center justify-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 text-[11px] font-semibold text-white/60 transition-all hover:bg-white/[0.06] hover:text-white active:scale-[0.97]"
+          >
+            <Search className="h-3 w-3" />
+            Specs
+          </button>
+        </div>
       </div>
-    </div>
+    </motion.div>
   );
 }

@@ -1,9 +1,20 @@
 'use client';
 
-import React from 'react';
+/**
+ * ProductResultsCanvas
+ * 
+ * High-density product grid displayed when updateProductCanvas fires.
+ * Connected to CanvasContext for product data and CartContext for add-to-cart.
+ * Features interactive product cards with size selectors and a detail drawer.
+ */
+
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, CheckCircle2, XCircle } from 'lucide-react';
+import { ArrowLeft, Grid3X3, LayoutGrid } from 'lucide-react';
 import type { CanvasProduct } from '@/context/CanvasContext';
+import { useCart } from '@/context/CartContext';
+import ProductCard from '@/components/chat/ProductCard';
+import ProductDetailDrawer from './ProductDetailDrawer';
 
 interface ProductResultsCanvasProps {
   products: CanvasProduct[];
@@ -11,6 +22,30 @@ interface ProductResultsCanvasProps {
 }
 
 export default function ProductResultsCanvas({ products, onBack }: ProductResultsCanvasProps) {
+  const { addItem } = useCart();
+  const [inspectProduct, setInspectProduct] = useState<CanvasProduct | null>(null);
+
+  const handleAddToCart = (sku: string, size: string) => {
+    const product = products.find(p => p.sku === sku);
+    if (product) {
+      addItem({
+        sku: product.sku,
+        quantity: 1,
+        size,
+        name: product.name,
+        price: product.price,
+        imageUrl: product.imageUrl,
+      });
+    }
+  };
+
+  const handleInspect = (sku: string) => {
+    const product = products.find(p => p.sku === sku);
+    if (product) {
+      setInspectProduct(product);
+    }
+  };
+
   return (
     <div className="flex h-full w-full flex-col bg-black/40 backdrop-blur-md">
       {/* Sticky Header */}
@@ -41,66 +76,33 @@ export default function ProductResultsCanvas({ products, onBack }: ProductResult
                 key={product.sku || idx}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.05 }}
-                className="group relative flex flex-col overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.02] shadow-lg transition-all hover:border-indigo-500/30 hover:bg-white/[0.04] hover:shadow-indigo-500/10"
+                transition={{ delay: idx * 0.05, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
               >
-                {/* Image Placeholder or actual image */}
-                <div className="aspect-[4/5] w-full overflow-hidden bg-white/[0.02]">
-                  {product.imageUrl ? (
-                    <img
-                      src={product.imageUrl}
-                      alt={product.name}
-                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-white/10">
-                      No Image
-                    </div>
-                  )}
-                </div>
-
-                {/* Content */}
-                <div className="flex flex-1 flex-col p-5">
-                  <div className="mb-1 text-xs font-medium uppercase tracking-wider text-indigo-400">
-                    {product.brand}
-                  </div>
-                  <h3 className="mb-2 line-clamp-2 flex-1 text-base font-semibold leading-tight text-white">
-                    {product.name}
-                  </h3>
-                  
-                  {product.sku && (
-                    <div className="mb-3 text-xs text-white/40">
-                      SKU: {product.sku}
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between mt-auto pt-4 border-t border-white/[0.06]">
-                    <div className="flex flex-col">
-                      <span className="text-lg font-bold text-white">
-                        ${product.price.toFixed(2)} {product.currency || 'USD'}
-                      </span>
-                    </div>
-                    
-                    <div className="flex items-center gap-1.5 text-xs font-medium">
-                      {product.inStock ? (
-                        <span className="flex items-center gap-1 text-emerald-400">
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          In Stock
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1 text-rose-400">
-                          <XCircle className="h-3.5 w-3.5" />
-                          Out of Stock
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                <ProductCard
+                  sku={product.sku}
+                  name={product.name}
+                  price={product.price}
+                  description={product.description}
+                  imageUrl={product.imageUrl}
+                  inStock={product.inStock}
+                  brand={product.brand}
+                  currency={product.currency}
+                  onAddToCart={handleAddToCart}
+                  onInspect={handleInspect}
+                />
               </motion.div>
             ))}
           </div>
         )}
       </div>
+
+      {/* Detail Drawer */}
+      <ProductDetailDrawer
+        product={inspectProduct}
+        isOpen={inspectProduct !== null}
+        onClose={() => setInspectProduct(null)}
+        onAddToCart={handleAddToCart}
+      />
     </div>
   );
 }

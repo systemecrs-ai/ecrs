@@ -2,7 +2,6 @@
 
 import React, { createContext, useContext, useState, useMemo, useCallback } from 'react';
 import { CartItem, CartState } from '@/types/cart';
-import { randomUUID } from 'crypto';
 
 const CartContext = createContext<CartState | undefined>(undefined);
 
@@ -20,7 +19,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         const newItems = [...prev];
         newItems[existingItemIndex] = {
           ...newItems[existingItemIndex],
-          quantity: newItems[existingItemIndex].quantity + item.quantity
+          quantity: newItems[existingItemIndex].quantity + item.quantity,
+          // Update display fields if they were previously missing
+          name: newItems[existingItemIndex].name || item.name,
+          price: newItems[existingItemIndex].price ?? item.price,
+          imageUrl: newItems[existingItemIndex].imageUrl || item.imageUrl,
         };
         return newItems;
       }
@@ -33,6 +36,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setItems(prev => prev.filter(item => item.id !== id));
   }, []);
 
+  const updateQuantity = useCallback((id: string, quantity: number) => {
+    if (quantity <= 0) {
+      setItems(prev => prev.filter(item => item.id !== id));
+      return;
+    }
+    setItems(prev =>
+      prev.map(item =>
+        item.id === id ? { ...item, quantity } : item
+      )
+    );
+  }, []);
+
   const clearCart = useCallback(() => {
     setItems([]);
   }, []);
@@ -41,13 +56,19 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     return items.reduce((total, item) => total + item.quantity, 0);
   }, [items]);
 
+  const totalPrice = useMemo(() => {
+    return items.reduce((total, item) => total + (item.price ?? 0) * item.quantity, 0);
+  }, [items]);
+
   const value = useMemo(() => ({
     items,
     addItem,
     removeItem,
+    updateQuantity,
     clearCart,
-    totalItems
-  }), [items, addItem, removeItem, clearCart, totalItems]);
+    totalItems,
+    totalPrice,
+  }), [items, addItem, removeItem, updateQuantity, clearCart, totalItems, totalPrice]);
 
   return (
     <CartContext.Provider value={value}>

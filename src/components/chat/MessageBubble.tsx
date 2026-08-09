@@ -9,7 +9,7 @@
  */
 
 import { useMemo } from 'react';
-import { User, CheckCircle2 } from 'lucide-react';
+import { User, CheckCircle2, ShoppingCart } from 'lucide-react';
 import Image from 'next/image';
 
 interface MessageBubbleProps {
@@ -20,9 +20,10 @@ interface MessageBubbleProps {
   isPendingTool?: boolean;
   onConfirmAction?: (payload: any) => void;
   onCancelAction?: (payload: any) => void;
+  onViewCart?: () => void;
 }
 
-export default function MessageBubble({ role, content, toolInvocations, isPendingTool = false, onConfirmAction, onCancelAction }: MessageBubbleProps) {
+export default function MessageBubble({ role, content, toolInvocations, isPendingTool = false, onConfirmAction, onCancelAction, onViewCart }: MessageBubbleProps) {
   const isUser = role === 'user';
 
   // Genuinely empty: no text content AND no tool invocations → render nothing
@@ -140,7 +141,15 @@ export default function MessageBubble({ role, content, toolInvocations, isPendin
                   return (
                     <div key={tool.toolCallId} className="mt-2 flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400 w-fit">
                       <CheckCircle2 className="h-3.5 w-3.5" />
-                      Added to Cart - [View Cart]
+                      <span>Added to Cart</span>
+                      <span className="text-emerald-500/30">•</span>
+                      <button
+                        onClick={onViewCart}
+                        className="inline-flex items-center gap-1 text-emerald-300 hover:text-emerald-200 transition-colors underline underline-offset-2 cursor-pointer"
+                      >
+                        <ShoppingCart className="h-3 w-3" />
+                        View Cart
+                      </button>
                     </div>
                   );
                 }

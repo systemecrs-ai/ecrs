@@ -1,10 +1,11 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import { Database, FileText, LayoutDashboard } from 'lucide-react';
+import { Database, FileText, LayoutDashboard, Package } from 'lucide-react';
 
 const navItems = [
   { name: 'Dashboard', href: '/admin', icon: LayoutDashboard, exact: true },
+  { name: 'Products', href: '/admin/products', icon: Package, exact: false },
   { name: 'Data Ingestion', href: '/admin/ingestion', icon: Database, exact: false },
   { name: 'Documents', href: '/admin/docs', icon: FileText, exact: false },
 ];
