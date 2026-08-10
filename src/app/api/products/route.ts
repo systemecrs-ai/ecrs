@@ -13,17 +13,14 @@ export async function GET() {
       { projection: { embedding: 0 } } // Do not send dense vectors to the frontend!
     ).toArray();
 
-    // Map _id to string if necessary, though your CanvasProduct uses 'sku' as the key
-    const formattedProducts = products.map((p) => ({
-      sku: p.sku,
-      name: p.name,
-      price: p.price,
-      description: p.description,
-      imageUrl: p.imageUrl,
-      inStock: p.inStock,
-      brand: p.brand,
-      currency: p.currency || 'USD'
-    }));
+    // Map _id to string and pass through all product fields except internal DB/vector fields
+    const formattedProducts = products.map((p: any) => {
+      const { _id, type, embedding, ...productFields } = p;
+      return {
+        ...productFields,
+        currency: p.currency || 'USD',
+      };
+    });
 
     return NextResponse.json({ products: formattedProducts });
   } catch (error: any) {
