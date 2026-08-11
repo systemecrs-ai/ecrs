@@ -9,6 +9,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import GoogleAuthButton from '@/components/auth/GoogleAuthButton';
 
+export const dynamic = 'force-dynamic';
+
 export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
