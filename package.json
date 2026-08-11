@@ -6,9 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "eslint .",
     "seed": "tsx scripts/seed-products.ts",
-    "typecheck": "tsc --noEmit",
+    "type-check": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
   },
