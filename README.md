@@ -1,21 +1,23 @@
-# CartContext: Enterprise Zero-Hallucination RAG Engine
+# CartContext: Enterprise Deterministic RAG Engine
 
-![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
-![Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)
-![License](https://img.shields.io/badge/license-MIT-blue)
+![Next.js](https://img.shields.io/badge/Next.js-14-black) ![TypeScript](https://img.shields.io/badge/TypeScript-Blue) ![Llama 3](https://img.shields.io/badge/AI-Llama_3.1-green) ![Status](https://img.shields.io/badge/Status-Production_Ready-success)
+
+> **TL;DR:** An autonomous apparel shopping assistant engineered to increase e-commerce conversion rates by reducing time-to-discovery. It utilizes bidirectional tool orchestration to physically manipulate a React storefront based on natural language intent.
 
 ## High-Level Overview
 
-CartContext is a polymorphic Retrieval-Augmented Generation (RAG) engine built to serve as an intelligent apparel shopping assistant at scale. The system processes heavy document payloads (15MB+) and complex multi-modal queries while maintaining strict tenant data isolation. By leveraging multi-tiered retrieval, semantic caching, and asynchronous background pipelines, CartContext guarantees extremely low-latency streaming responses without compromising on reasoning depth.
+CartContext is a high-performance Retrieval-Augmented Generation (RAG) engine built for scale. The system safely processes heavy document payloads (15MB+) and complex multi-modal queries while maintaining strict tenant data isolation. By leveraging multi-tiered retrieval, semantic caching, and asynchronous background pipelines, CartContext guarantees sub-second streaming responses without compromising reasoning depth.
+
+![Architecture Diagram Placeholder](./docs/architecture.png) 
+*(Note: Add your Mermaid architecture diagram here)*
 
 ## Key Features
-- **Zero-Hallucination RAG Pipeline**: Multi-tiered semantic retrieval with Cohere reranking.
-- **Split-Pane Workspace Layout**: Interactive product canvas (60%) + AI chat narrative (40%) with mobile tab switching.
-- **Agentic Cart Mutations (Optimistic UI)**: Real-time, defensively parsed tool execution seamlessly integrated with global cart state.
-- **Bidirectional Tool Interception**: Universal adapter intercepts `updateProductCanvas`, `addToCart`, and HITL tools to sync chat, canvas, and cart state.
-- **Two-Tier Semantic Caching**: Sub-1.2s TTFT with TTL-pruned MongoDB caching and LLM verification.
-- **Async Document Ingestion**: Inngest-powered durable background jobs for structural extraction and embedding.
+
+*   **Hallucination-Mitigated RAG Pipeline:** Multi-tiered semantic retrieval with Cohere reranking and strictly sandboxed tool execution.
+*   **Spatial UI (Split-Pane Workspace):** Interactive product canvas (60%) + AI chat narrative (40%) with seamless mobile tab switching.
+*   **Agentic Cart Mutations (Optimistic UI):** Real-time, defensively parsed tool execution seamlessly integrated with global React cart state.
+*   **Two-Tier Semantic Caching:** Sub-second TTFT with TTL-pruned MongoDB caching and high-speed LLM verification.
+*   **Async Document Ingestion:** Inngest-powered durable background jobs for structural extraction (LlamaParse) and embedding.
 
 ## The Engineering Challenges & Solutions
 
@@ -264,7 +266,6 @@ z.object({
 
 ### Prerequisites
 - Node.js (v20+)
-- Docker & docker-compose
 - MongoDB Atlas cluster (M0 or higher with Vector Search enabled)
 - API Key Accounts: Nvidia NIM, Cohere, Supabase, Inngest
 
