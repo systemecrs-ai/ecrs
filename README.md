@@ -8,7 +8,7 @@
 
 CartContext is a high-performance Retrieval-Augmented Generation (RAG) engine built for scale. The system safely processes heavy document payloads (15MB+) and complex multi-modal queries while maintaining strict tenant data isolation. By leveraging multi-tiered retrieval, semantic caching, and asynchronous background pipelines, CartContext guarantees sub-second streaming responses without compromising reasoning depth.
 
-![Architecture Diagram Placeholder](https://excalidraw.com/#json=1ce0TmRaDUMvd3WuGR9Cw,Rq49mLBQ73s9C30Os1C5rg) 
+[Architecture Diagram Placeholder](https://excalidraw.com/#json=1ce0TmRaDUMvd3WuGR9Cw,Rq49mLBQ73s9C30Os1C5rg) 
 
 ## Key Features
 
