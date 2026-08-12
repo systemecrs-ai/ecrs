@@ -37,5 +37,13 @@ jobs:
       - name: Run Type Checking
         run: npm run type-check
 
-      - name: Run Build
+      # Step 7: Generate dummy environment variables to satisfy static compilation
+      - name: Create Dummy Env File
+        run: |
+          touch .env
+          echo "NEXT_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co" >> .env
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=placeholder_key" >> .env
+          
+      # Step 8: Build the application
+      - name: Build Next.js App
         run: npm run build
