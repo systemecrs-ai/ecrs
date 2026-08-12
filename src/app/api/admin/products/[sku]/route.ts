@@ -14,17 +14,26 @@ export async function PUT(
     }
 
     const payload = await request.json();
-    const { name, brand, description, price, inStock, category, imageUrl } = payload;
+    const {
+      name, brand, description, price, inStock, category, imageUrl,
+      subcategory, currency, gender, material, colors, sizes,
+      stockCount, rating, reviewCount, reviews, dimensions,
+      shippingInformation, returnPolicy, tags,
+    } = payload;
 
     // Validate required fields
     if (!name || !description || price === undefined) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // Construct the dense string for the vector embedding
+    // Construct a richer dense string for the vector embedding
     const safeBrand = brand || 'Unknown Brand';
     const safeCategory = category || 'Apparel';
-    const denseString = `Brand: ${safeBrand}. Product: ${name}. Category: ${safeCategory}. Description: ${description}.`;
+    const safeSubcategory = subcategory ? ` > ${subcategory}` : '';
+    const safeGender = gender ? `. Designed for: ${gender}` : '';
+    const safeMaterial = material ? `. Material: ${material}` : '';
+    const safeTags = tags && tags.length > 0 ? `. Tags: ${tags.join(', ')}` : '';
+    const denseString = `Brand: ${safeBrand}. Product: ${name}. Category: ${safeCategory}${safeSubcategory}${safeGender}${safeMaterial}. Description: ${description}${safeTags}.`;
 
     // Generate new embeddings
     let embedding: number[];
@@ -38,7 +47,7 @@ export async function PUT(
     const db = await getDatabase();
     const collection = db.collection(UNIFIED_NODES_COLLECTION);
 
-    // Prepare update document
+    // Prepare update document with ALL product fields
     const updateDoc = {
       $set: {
         name,
@@ -49,6 +58,22 @@ export async function PUT(
         imageUrl,
         embedding,
         updatedAt: new Date().toISOString(),
+        // Extended fields
+        ...(category !== undefined && { category }),
+        ...(subcategory !== undefined && { subcategory }),
+        ...(currency !== undefined && { currency }),
+        ...(gender !== undefined && { gender }),
+        ...(material !== undefined && { material }),
+        ...(colors !== undefined && { colors: Array.isArray(colors) ? colors : [] }),
+        ...(sizes !== undefined && { sizes: Array.isArray(sizes) ? sizes : [] }),
+        ...(stockCount !== undefined && { stockCount: Number(stockCount) }),
+        ...(rating !== undefined && { rating: Number(rating) }),
+        ...(reviewCount !== undefined && { reviewCount: Number(reviewCount) }),
+        ...(reviews !== undefined && { reviews }),
+        ...(dimensions !== undefined && { dimensions }),
+        ...(shippingInformation !== undefined && { shippingInformation }),
+        ...(returnPolicy !== undefined && { returnPolicy }),
+        ...(tags !== undefined && { tags: Array.isArray(tags) ? tags : [] }),
       },
     };
 

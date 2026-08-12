@@ -22,6 +22,26 @@ export interface CanvasProduct {
   brand?: string;
   /** Optional — defaults to 'USD' in rendering if absent */
   currency?: string;
+  /** Classification fields */
+  category?: string;
+  subcategory?: string;
+  gender?: string;
+  /** Product specification fields */
+  material?: string;
+  colors?: string[];
+  sizes?: string[];
+  tags?: string[];
+  /** Inventory fields */
+  stockCount?: number;
+  /** Review & rating fields */
+  rating?: number;
+  reviewCount?: number;
+  reviews?: { rating: number; comment: string; reviewerName: string; date: string }[];
+  /** Physical dimensions */
+  dimensions?: { width: number; height: number; unit: string };
+  /** Shipping & return policies */
+  shippingInformation?: string;
+  returnPolicy?: string;
 }
 
 // ─── Canvas State Types ─────────────────────────────────────────────────────
