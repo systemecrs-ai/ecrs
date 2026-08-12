@@ -223,14 +223,7 @@ export const agentTools = {
       executionTimeMs: Date.now() - start,
       hitlRequired: false,
       data: {
-        items: products.map(p => ({
-          sku: p.sku,
-          name: p.name,
-          price: p.price,
-          description: p.description,
-          imageUrl: p.imageUrl,
-          inStock: p.inStock
-        })),
+        items: products,
         summary: args.summary
       }
     } as AgentToolResult<any>;

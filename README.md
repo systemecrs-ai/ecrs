@@ -321,7 +321,6 @@ npm start
 ## Future Roadmap / Optimizations
 
 - **Functional Paradigms for Data Transformations**: Migrate the complex LlamaParse chunking and summarization logic into isolated, pure functional pipelines (e.g., using `fp-ts`) to improve testability and reduce side-effects during document ingestion.
-- **Deep Distributed Observability**: Implement OpenTelemetry tracing across the Next.js edge, Inngest workers, and MongoDB layers to achieve granular bottleneck visualization beyond the current Langfuse LLM traces.
 - **Predictive Caching via Speculative Decoding**: Pre-warm the semantic cache by predicting follow-up user intents based on the current conversational context, further reducing latency for sequential reasoning tasks.
 - **Visual Search (`searchByImage`)**: Enable image-based product discovery using CLIP embeddings.
 - **Multi-Store Reservation System**: Connect `reserveItemInStore` to real store inventory APIs.
