@@ -45,7 +45,15 @@ function getClientPromise(): Promise<MongoClient> {
   if (!global.mongoClientPromise) {
     log.info('Creating new MongoDB client and caching globally');
     const client = new MongoClient(uri, CLIENT_OPTIONS);
-    global.mongoClientPromise = client.connect();
+    
+    // THE FIX: Cache the promise, but attach a .catch() to clear it if it fails!
+    global.mongoClientPromise = client.connect().catch((error) => {
+      log.error('Initial MongoDB connection failed, clearing cache', { error: error.message });
+      global.mongoClientPromise = undefined; // <--- Allows the app to retry on next request
+      global.mongoClient = undefined;
+      throw error;
+    });
+    
     global.mongoClient = client;
   } else {
     log.debug('Reusing globally cached MongoDB client promise');
