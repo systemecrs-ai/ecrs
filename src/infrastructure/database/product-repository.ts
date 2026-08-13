@@ -44,6 +44,7 @@ export async function hybridSearch(
   try {
     const db = await getDatabase();
     const collection = db.collection<UnifiedNode>(UNIFIED_NODES_COLLECTION);
+    const safeFilter = filter || {};
 
     log.info('Executing hybrid search', {
       queryText,
@@ -52,8 +53,7 @@ export async function hybridSearch(
       hasFilter: !!filter,
     });
 
-    const filterConditions = filter ? buildFilterConditions(filter) : {};
-    filterConditions.type = 'product';
+    const vectorFilterConditions = buildVectorFilter(safeFilter);
 
     // Build the $vectorSearch stage
     const vectorSearchStage: Document = {
@@ -63,18 +63,23 @@ export async function hybridSearch(
         queryVector: queryEmbedding,
         numCandidates: VECTOR_NUM_CANDIDATES,
         limit: limit * 2, // over-fetch for RRF
-        filter: filterConditions,
+        filter: vectorFilterConditions,
       },
     };
 
     // Build the $search stage for lexical match
     const lexicalSearchStage: Document = {
       $search: {
-        index: 'product_text_index', // Assuming inverted text index name
-        text: {
-          query: queryText,
-          path: ['name', 'brand', 'category', 'subcategory', 'tags'],
-          fuzzy: { maxEdits: 1 },
+        index: 'product_text_index',
+        compound: {
+          must: [{
+            text: {
+              query: queryText,
+              path: ['name', 'brand', 'category', 'subcategory', 'tags'],
+              fuzzy: { maxEdits: 1 },
+            }
+          }],
+          filter: buildLexicalFilter(safeFilter) // Executes instantly on search nodes
         }
       }
     };
@@ -111,7 +116,6 @@ export async function hybridSearch(
 
     const lexicalPipeline: Document[] = [
       lexicalSearchStage,
-      { $match: filterConditions },
       { $limit: limit * 2 },
       commonProjectStage,
     ];
@@ -163,6 +167,7 @@ export async function hybridSearch(
 
     // Sort by combined RRF score descending and limit
     const mergedResults = Array.from(rrfMap.values())
+      .filter(doc => doc.inStock === true)
       .sort((a, b) => b.rrfScore - a.rrfScore)
       .slice(0, limit)
       .map(doc => {
@@ -239,17 +244,20 @@ export async function getProductCount(): Promise<number> {
 // ─── Private Helpers ────────────────────────────────────────────────────────
 
 /**
- * Constructs a MongoDB filter document from a ProductFilter.
- * Used for pre-filtering in $vectorSearch.
+ * Constructs standard MQL for $vectorSearch.
+ * Enforces inStock = true by default.
  */
-function buildFilterConditions(filter: ProductFilter): Document {
-  const conditions: Document = {};
+function buildVectorFilter(filter: ProductFilter): Document {
+  const conditions: Document = {
+    type: 'product',
+    // HARD ENFORCEMENT: Default to true unless explicitly requested otherwise
+    inStock: filter.inStock !== undefined ? filter.inStock : true 
+  };
 
   if (filter.category) conditions.category = filter.category;
   if (filter.subcategory) conditions.subcategory = filter.subcategory;
   if (filter.gender) conditions.gender = filter.gender;
   if (filter.brand) conditions.brand = filter.brand;
-  if (filter.inStock !== undefined) conditions.inStock = filter.inStock;
 
   if (filter.minPrice !== undefined || filter.maxPrice !== undefined) {
     conditions.price = {};
@@ -258,4 +266,29 @@ function buildFilterConditions(filter: ProductFilter): Document {
   }
 
   return conditions;
+}
+
+/**
+ * Constructs Lucene-syntax filters specifically for Atlas $search.
+ * Enforces inStock = true by default.
+ */
+function buildLexicalFilter(filter: ProductFilter): Document[] {
+  const searchFilters: Document[] = [
+    { equals: { path: 'type', value: 'product' } },
+    { equals: { path: 'inStock', value: filter.inStock !== undefined ? filter.inStock : true } }
+  ];
+
+  if (filter.category) searchFilters.push({ text: { path: 'category', query: filter.category } });
+  if (filter.subcategory) searchFilters.push({ text: { path: 'subcategory', query: filter.subcategory } });
+  if (filter.brand) searchFilters.push({ text: { path: 'brand', query: filter.brand } });
+  if (filter.gender) searchFilters.push({ text: { path: 'gender', query: filter.gender } });
+
+  if (filter.minPrice !== undefined || filter.maxPrice !== undefined) {
+    const priceRange: any = { path: 'price' };
+    if (filter.minPrice !== undefined) priceRange.gte = filter.minPrice;
+    if (filter.maxPrice !== undefined) priceRange.lte = filter.maxPrice;
+    searchFilters.push({ range: priceRange });
+  }
+
+  return searchFilters;
 }
