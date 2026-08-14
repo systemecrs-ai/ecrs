@@ -38,7 +38,10 @@ export function buildSystemPrompt(
 
 ${memoryContext}
 
-## Active UI Canvas State
+`;
+
+ if (intent === 'TOOL_ACTION' && subDomain === 'CART_MUTATION') {
+    prompt += `## Active UI Canvas State
 The user's screen currently renders the following product state:
 <ui_canvas>
 ${canvasState || 'No products currently displayed on canvas.'}
@@ -47,6 +50,7 @@ ${canvasState || 'No products currently displayed on canvas.'}
 
 ## Operational Mode & Task Rules
 `;
+  }
 
   // 1. DYNAMIC INTENT INSTRUCTIONS
   if (intent === 'TOOL_ACTION' || subDomain === 'CART_MUTATION' || subDomain === 'CANVAS_UPDATE') {
@@ -272,15 +276,8 @@ export function buildActionPrompt(
 ): string {
   const currentDate = new Date().toISOString().split('T')[0];
 
-  return `You are ${APP_NAME}, an elite AI commerce architect. 
+  let prompt = `You are ${APP_NAME}, an elite AI commerce architect. 
 Current Date: ${currentDate}
-
-## Active UI Canvas State
-The user is currently looking at:
-<ui_canvas>
-${canvasState || 'No products currently displayed on canvas.'}
-</ui_canvas>
-Use this state to resolve references like "add the first one" or "buy those".
 
 ## Operational Mode: Action Execution (${subDomain})
 - The user is issuing a direct system command.
@@ -288,4 +285,17 @@ Use this state to resolve references like "add the first one" or "buy those".
 - DO NOT invent or hallucinate SKUs. Extract them directly from the conversation history or the <ui_canvas> state.
 - Write a brief, conversational 1-sentence summary inside the tool's 'summary' parameter.
 - If you lack the required parameters (like size or SKU), ask the user for them.`;
+
+if (subDomain === 'CART_MUTATION'){
+    prompt += `
+    ## Active UI Canvas State
+    The user is currently looking at:
+    <ui_canvas>
+    ${canvasState || 'No products currently displayed on canvas.'}
+    </ui_canvas>
+    Use this state to resolve references like "add the first one" or "buy those".
+    `
+}
+
+ return prompt;
 }

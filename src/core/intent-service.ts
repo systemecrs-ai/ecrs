@@ -48,8 +48,6 @@ export function getScopedTools(subDomain: SubDomainType): any {
       // Bind Cart + Canvas + Inventory so the model can handle complex cart actions
       return { 
         addToCart: agentTools.addToCart,
-        updateProductCanvas: agentTools.updateProductCanvas,
-        checkInventory: agentTools.checkInventory 
       };
 
     case 'CANVAS_UPDATE':
@@ -57,8 +55,6 @@ export function getScopedTools(subDomain: SubDomainType): any {
       // Bind Canvas + Cart + Inventory so discovery can seamlessly transition to purchase
       return { 
         updateProductCanvas: agentTools.updateProductCanvas,
-        addToCart: agentTools.addToCart,
-        checkInventory: agentTools.checkInventory
       };
 
     case 'ORDER_LOOKUP':
@@ -69,7 +65,6 @@ export function getScopedTools(subDomain: SubDomainType): any {
     case 'RESERVATION':
       return { 
         reserveItemInStore: agentTools.reserveItemInStore,
-        checkInventory: agentTools.checkInventory 
       };
 
     default:

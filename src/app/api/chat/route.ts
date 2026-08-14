@@ -47,7 +47,7 @@ export async function POST(req: Request): Promise<Response> {
         system: buildActionPrompt(subDomain, canvasState),
         
         messages: [
-          ...chatHistory, // Ensures history is passed correctly without 'system' role inside
+          ...chatHistory,
           { role: 'user', content: userQuery }
         ],
       });
